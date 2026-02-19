@@ -1,0 +1,22 @@
+{
+  "name": "data-extraction-tool",
+  "version": "1.0.0",
+  "description": "Intelligent data extraction tool with MongoDB and open-source LLMs",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "models": "docker exec -it extraction-ollama ollama pull llama3.2"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

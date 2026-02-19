@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod:*)",
+      "Bash(./create-project.sh:*)",
+      "Bash(pkill:*)",
+      "Bash(npm run dev:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(pip install:*)",
+      "Bash(python scripts/seed.py:*)",
+      "Bash(python3:*)",
+      "Bash(docker --version:*)",
+      "Bash(curl:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -1,0 +1,26 @@
+2026-02-19 16:04:33 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
+2026-02-19 16:04:33 | INFO     | app.services.enhanced_llm_service:__init__:45 - EnhancedLLMService initialized: base_url=http://localhost:11434, model=phi
+2026-02-19 16:04:33 | WARNING  | app.api.routes.batch:<module>:22 - batch_service unavailable (ExtractionJob model removed). Batch endpoints disabled.
+2026-02-19 16:04:34 | INFO     | app.main:lifespan:30 - Starting application...
+2026-02-19 16:04:34 | INFO     | app.core.database:connect:27 - Connecting to MongoDB at mongodb://localhost:27017
+2026-02-19 16:04:34 | INFO     | app.core.database:connect:40 - MongoDB connection established successfully
+2026-02-19 16:04:34 | INFO     | app.core.database:connect:57 - Beanie ODM initialized successfully
+2026-02-19 16:04:34 | INFO     | app.core.database:create_indexes:73 - Creating database indexes...
+2026-02-19 16:04:34 | INFO     | app.core.database:create_indexes:82 - Database indexes created successfully
+2026-02-19 16:04:34 | INFO     | app.main:lifespan:35 - MongoDB connected
+2026-02-19 16:04:34 | INFO     | app.core.redis_client:connect:26 - Connecting to Redis at redis://localhost:6379
+2026-02-19 16:04:34 | INFO     | app.core.redis_client:connect:41 - Redis connection established successfully
+2026-02-19 16:04:34 | INFO     | app.main:lifespan:39 - Redis connected
+2026-02-19 16:04:34 | INFO     | app.main:lifespan:41 - Application started successfully on development environment
+2026-02-19 16:05:01 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1391053 chars from https://www.emiratesnbd.com/en/cards/credit-cards
+2026-02-19 16:09:45 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
+2026-02-19 16:11:17 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1390348 chars from https://www.emiratesnbd.com/en/cards/credit-cards
+2026-02-19 16:11:50 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
+2026-02-19 21:26:54 | INFO     | app.main:lifespan:50 - Shutting down application...
+2026-02-19 21:26:54 | INFO     | app.core.database:disconnect:91 - Closing MongoDB connection
+2026-02-19 21:26:54 | INFO     | app.core.database:disconnect:95 - MongoDB connection closed
+2026-02-19 21:26:54 | INFO     | app.main:lifespan:54 - MongoDB disconnected
+2026-02-19 21:26:54 | INFO     | app.core.redis_client:disconnect:51 - Closing Redis connection
+2026-02-19 21:26:54 | INFO     | app.core.redis_client:disconnect:58 - Redis connection closed
+2026-02-19 21:26:54 | INFO     | app.main:lifespan:57 - Redis disconnected
+2026-02-19 21:26:54 | INFO     | app.main:lifespan:59 - Application shutdown complete

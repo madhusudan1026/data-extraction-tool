@@ -1,0 +1,15 @@
+*.swp
+.vscode/
+.idea/
+__pycache__/
+__MACOSX/
+.DS_Store
+backend/.DS_Store
+config/__pycache__/
+utils/__pycache__/
+notebooks/
+venv/
+venv1/
+venv2/
+logs/
+node_modules/

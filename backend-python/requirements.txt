@@ -1,0 +1,65 @@
+# Web Framework
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-multipart==0.0.12
+
+# Database
+motor==3.6.0
+pymongo==4.9.1
+beanie==1.27.0
+
+# Redis
+redis==5.2.0
+aioredis==2.0.1
+
+# Validation
+pydantic==2.9.2
+pydantic-settings==2.6.1
+email-validator==2.2.0
+
+# PDF Processing
+PyPDF2==3.0.1
+pdfplumber==0.11.4
+pdf2image==1.17.0
+PyMuPDF==1.24.10  # Better font handling and text extraction
+pytesseract==0.3.10  # OCR for scanned PDFs
+Pillow==10.4.0  # Image processing for OCR
+
+# Web Scraping
+httpx==0.27.2
+beautifulsoup4==4.12.3
+lxml==5.3.0
+brotli==1.1.0
+playwright==1.48.0  # For JS-rendered pages
+
+# LLM Integration
+ollama==0.4.2
+
+# Vector Store
+chromadb>=1.0.0
+
+# Utilities
+python-dotenv==1.0.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-dateutil==2.9.0.post0
+
+# Logging
+loguru==0.7.2
+
+# Rate Limiting
+slowapi==0.1.9
+
+# Background Tasks (optional)
+celery[redis]==5.4.0
+
+# Testing
+pytest==8.3.3
+pytest-asyncio==0.24.0
+pytest-cov==5.0.0
+httpx==0.27.2
+
+# Code Quality
+black==24.8.0
+flake8==7.1.1
+mypy==1.11.2

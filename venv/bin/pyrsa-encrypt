@@ -1,0 +1,7 @@
+#!/Users/roshimadhu/Desktop/My_Work_Bench/data_extraction_tool/data-extraction-tool/venv/bin/python3.12
+import sys
+from rsa.cli import encrypt
+if __name__ == '__main__':
+    if sys.argv[0].endswith('.exe'):
+        sys.argv[0] = sys.argv[0][:-4]
+    sys.exit(encrypt())
