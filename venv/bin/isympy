@@ -1,0 +1,6 @@
+#!/Users/roshimadhu/Desktop/My_Work_Bench/data_extraction_tool/data-extraction-tool/venv/bin/python3.12
+import sys
+from isympy import main
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(main())
