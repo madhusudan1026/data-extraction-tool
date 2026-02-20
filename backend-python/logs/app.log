@@ -24,3 +24,21 @@
 2026-02-19 21:26:54 | INFO     | app.core.redis_client:disconnect:58 - Redis connection closed
 2026-02-19 21:26:54 | INFO     | app.main:lifespan:57 - Redis disconnected
 2026-02-19 21:26:54 | INFO     | app.main:lifespan:59 - Application shutdown complete
+2026-02-19 23:11:07 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
+2026-02-19 23:11:07 | INFO     | app.services.enhanced_llm_service:__init__:45 - EnhancedLLMService initialized: base_url=http://localhost:11434, model=phi
+2026-02-19 23:11:07 | WARNING  | app.api.routes.batch:<module>:22 - batch_service unavailable (ExtractionJob model removed). Batch endpoints disabled.
+2026-02-19 23:11:07 | INFO     | app.main:lifespan:30 - Starting application...
+2026-02-19 23:11:07 | INFO     | app.core.database:connect:27 - Connecting to MongoDB at mongodb://localhost:27017
+2026-02-19 23:11:07 | INFO     | app.core.database:connect:40 - MongoDB connection established successfully
+2026-02-19 23:11:07 | INFO     | app.core.database:connect:57 - Beanie ODM initialized successfully
+2026-02-19 23:11:07 | INFO     | app.core.database:create_indexes:73 - Creating database indexes...
+2026-02-19 23:11:07 | INFO     | app.core.database:create_indexes:82 - Database indexes created successfully
+2026-02-19 23:11:07 | INFO     | app.main:lifespan:35 - MongoDB connected
+2026-02-19 23:11:07 | INFO     | app.core.redis_client:connect:26 - Connecting to Redis at redis://localhost:6379
+2026-02-19 23:11:07 | INFO     | app.core.redis_client:connect:41 - Redis connection established successfully
+2026-02-19 23:11:07 | INFO     | app.main:lifespan:39 - Redis connected
+2026-02-19 23:11:07 | INFO     | app.main:lifespan:41 - Application started successfully on development environment
+2026-02-19 23:11:35 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1389824 chars from https://www.emiratesnbd.com/en/cards/credit-cards
+2026-02-19 23:14:03 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
+2026-02-20 15:20:42 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1390675 chars from https://www.emiratesnbd.com/en/cards/credit-cards
+2026-02-20 15:22:23 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1390370 chars from https://www.emiratesnbd.com/en/cards/credit-cards
