@@ -232,8 +232,8 @@ async def parse_card_detail_page(
 
     sections = []
 
-    # Strategy 1: Find sections by headings (h2, h3)
-    sections = _extract_sections_by_headings(main_content)
+    # Strategy 1: Find sections by headings (h2, h3) — includes per-section links
+    sections = _extract_sections_by_headings(main_content, url)
 
     # Strategy 2: Find tab panels / accordion sections
     if len(sections) < 2:
@@ -263,48 +263,266 @@ async def parse_card_detail_page(
         if text:
             sections = [{"section_name": "overview", "content": text[:5000], "section_type": "general"}]
 
-    # Classify section types
+    # Classify section types and ensure links array exists
     for sec in sections:
         sec["section_type"] = _classify_section(sec["section_name"], sec["content"])
+        if "links" not in sec:
+            sec["links"] = []
 
-    # Extract discovered URLs from the page
-    discovered_urls = _extract_links_from_soup(main_content if main_content != soup else soup, url)
+    # ---- BUILD DISCOVERED URLs FROM SECTIONS FIRST ----
+    # This ensures every URL is mapped to its source section
+    all_discovered_urls = []
+    seen_urls = set()
 
-    logger.info(f"[Structured] Depth 1: Parsed {len(sections)} sections, {len(discovered_urls)} links from {card_name}")
-    return sections, discovered_urls
+    for sec in sections:
+        for link in sec.get("links", []):
+            link_url = link.get("url", "")
+            if not link_url or link_url in seen_urls:
+                continue
+            seen_urls.add(link_url)
+            # Apply relevance filter
+            is_relevant = _is_relevant_link(link_url, link.get("title", ""))
+            if is_relevant:
+                all_discovered_urls.append({
+                    "url": link_url,
+                    "title": link.get("title", ""),
+                    "url_type": "pdf" if '.pdf' in link_url.lower() else "web",
+                    "is_relevant": True,
+                    "source_section": sec["section_name"],
+                })
+
+    # Supplement with page-wide scan for links NOT already captured by sections
+    page_wide_links = _extract_links_from_soup(main_content if main_content != soup else soup, url)
+    for link in page_wide_links:
+        if link["url"] not in seen_urls:
+            seen_urls.add(link["url"])
+            link["source_section"] = "_unassigned"
+            all_discovered_urls.append(link)
+
+    logger.info(f"[Structured] Depth 1: {len(sections)} sections, {len(all_discovered_urls)} links ({len(all_discovered_urls) - len([u for u in all_discovered_urls if u.get('source_section') == '_unassigned'])} mapped) from {card_name}")
+    return sections, all_discovered_urls
 
 
-def _extract_sections_by_headings(soup: BeautifulSoup) -> List[Dict]:
-    """Extract sections using h2/h3 headings as delimiters."""
+
+def _extract_sections_by_headings(soup: BeautifulSoup, base_url: str = "") -> List[Dict]:
+    """
+    Extract sections using h2/h3 headings as delimiters.
+    
+    Handles modern bank sites where headings are wrapped in sub-divs:
+    1. Try sibling traversal first (traditional heading-content pattern)
+    2. If no content found, walk UP to find the section container (parent/grandparent)
+       that holds both the heading and its associated content
+    3. Extract text with proper line breaks between elements
+    4. Capture all links within the section container
+    """
     sections = []
     headings = soup.find_all(['h2', 'h3'])
+    used_containers = set()  # Track containers to avoid duplicate content
 
     for i, heading in enumerate(headings):
         name = heading.get_text(strip=True)
-        if not name or len(name) < 2:
+        if not name or len(name) < 2 or len(name) > 200:
             continue
 
-        # Collect content between this heading and the next
         content_parts = []
+        section_links = []
+
+        # ---- Strategy A: Sibling traversal ----
         sibling = heading.find_next_sibling()
         while sibling:
             if sibling.name in ['h2', 'h3']:
                 break
-            text = sibling.get_text(strip=True)
-            if text and len(text) > 5:
-                content_parts.append(text)
+            if hasattr(sibling, 'get_text'):
+                _collect_text_with_breaks(sibling, content_parts)
+                _collect_links(sibling, section_links, base_url)
             sibling = sibling.find_next_sibling()
 
-        content = '\n'.join(content_parts)
+        # ---- Strategy B: Container walk-up ----
+        # If siblings yielded little content, look at parent containers
+        if len(content_parts) < 2 or not section_links:
+            # Walk up to find a meaningful container
+            container = _find_section_container(heading)
+            if container and id(container) not in used_containers:
+                used_containers.add(id(container))
+                container_parts = []
+                container_links = []
+                
+                # Get all content from container EXCEPT the heading itself
+                for child in container.descendants:
+                    if child == heading:
+                        continue
+                    if hasattr(child, 'name'):
+                        # Skip nested headings (they'll be their own sections)
+                        if child.name in ['h2', 'h3'] and child != heading:
+                            continue
+                        _collect_links_single(child, container_links, base_url)
+
+                _collect_text_with_breaks(container, container_parts)
+                # Remove the heading text from content
+                if container_parts and name in container_parts[0]:
+                    container_parts[0] = container_parts[0].replace(name, '', 1).strip()
+
+                # Use container content if it's richer
+                if len(container_parts) > len(content_parts) or len(container_links) > len(section_links):
+                    content_parts = container_parts if len(container_parts) > len(content_parts) else content_parts
+                    section_links = container_links if len(container_links) > len(section_links) else section_links
+
+        # Deduplicate links
+        seen_link_urls = set()
+        deduped_links = []
+        for lnk in section_links:
+            if lnk["url"] not in seen_link_urls:
+                seen_link_urls.add(lnk["url"])
+                deduped_links.append(lnk)
+        section_links = deduped_links
+
+        content = _clean_section_text('\n'.join(p for p in content_parts if p.strip()))
         if content and len(content) > 20:
             sections.append({
                 "section_name": _normalize_section_name(name),
                 "content": content,
                 "section_type": "general",
                 "heading_text": name,
+                "links": section_links,
             })
 
     return sections
+
+
+def _find_section_container(heading: Tag) -> Optional[Tag]:
+    """
+    Walk up from a heading to find the section/container that holds
+    both the heading and its associated content.
+    
+    Looks for: <section>, <div> with section-like classes, or any parent
+    that has significantly more content than just the heading.
+    """
+    section_indicators = [
+        'section', 'block', 'container', 'wrapper', 'module',
+        'feature', 'benefit', 'advantage', 'card-detail', 'content-area',
+    ]
+
+    current = heading.parent
+    for _ in range(5):  # Walk up max 5 levels
+        if not current or current.name in ['body', 'main', 'html', '[document]']:
+            break
+
+        # Check if this is a section-like container
+        classes = ' '.join(current.get('class', [])).lower()
+        tag_name = current.name or ''
+
+        is_section = (
+            tag_name == 'section' or
+            any(ind in classes for ind in section_indicators) or
+            current.get('role') == 'region'
+        )
+
+        # Also check: does this container have links that siblings don't?
+        container_links = len(current.find_all('a', href=True))
+        heading_sibling_links = 0
+        sib = heading.find_next_sibling()
+        while sib and sib.name not in ['h2', 'h3']:
+            if hasattr(sib, 'find_all'):
+                heading_sibling_links += len(sib.find_all('a', href=True))
+            sib = sib.find_next_sibling()
+
+        if is_section or (container_links > heading_sibling_links + 1):
+            return current
+
+        current = current.parent
+
+    return None
+
+
+def _collect_text_with_breaks(element: Tag, parts: List[str], depth: int = 0):
+    """
+    Extract text from an element with proper line breaks.
+    Uses leaf-block strategy: only extract text from block elements that
+    have NO block children (leaf blocks). This prevents duplication where
+    a parent div's text includes all child divs' text.
+    """
+    if depth > 20:
+        return
+
+    if not hasattr(element, 'children'):
+        text = re.sub(r'\s+', ' ', str(element)).strip()
+        if text and len(text) > 1:
+            parts.append(text)
+        return
+
+    block_tags = {'div', 'p', 'li', 'h4', 'h5', 'h6', 'tr', 'dt', 'dd',
+                  'article', 'section', 'blockquote', 'figcaption'}
+    list_tags = {'li', 'dt', 'dd'}
+    skip_tags = {'script', 'style', 'nav', 'footer', 'header', 'svg', 'noscript', 'iframe'}
+
+    for child in element.children:
+        if not hasattr(child, 'name') or not child.name:
+            # Text node
+            text = re.sub(r'\s+', ' ', str(child)).strip()
+            if text and len(text) > 1:
+                parts.append(text)
+            continue
+
+        if child.name in skip_tags:
+            continue
+
+        if child.name == 'br':
+            parts.append('')
+            continue
+
+        if child.name in ['ul', 'ol', 'dl']:
+            for item in child.find_all(['li', 'dt', 'dd'], recursive=False):
+                text = re.sub(r'\s+', ' ', item.get_text(strip=True))
+                if text:
+                    parts.append(f"• {text}")
+            continue
+
+        if child.name == 'table':
+            for row in child.find_all('tr'):
+                cells = [re.sub(r'\s+', ' ', td.get_text(strip=True)) for td in row.find_all(['td', 'th'])]
+                cells = [c for c in cells if c]
+                if cells:
+                    parts.append(' | '.join(cells))
+            continue
+
+        if child.name in block_tags:
+            # Check if this is a leaf block (no block children)
+            has_block_child = any(
+                hasattr(gc, 'name') and gc.name in block_tags
+                for gc in (child.children if hasattr(child, 'children') else [])
+            )
+            if not has_block_child:
+                # Leaf block — get its text as one clean line
+                text = re.sub(r'\s+', ' ', child.get_text(strip=True))
+                if text and len(text) > 1:
+                    prefix = '• ' if child.name in list_tags else ''
+                    parts.append(prefix + text)
+            else:
+                # Has block children — recurse
+                _collect_text_with_breaks(child, parts, depth + 1)
+        else:
+            # Inline element — recurse
+            _collect_text_with_breaks(child, parts, depth + 1)
+
+
+def _collect_links(element: Tag, links: List[Dict], base_url: str):
+    """Collect all links from an element tree."""
+    if not hasattr(element, 'find_all'):
+        return
+    for a_tag in element.find_all('a', href=True):
+        _collect_links_single(a_tag, links, base_url)
+
+
+def _collect_links_single(element: Tag, links: List[Dict], base_url: str):
+    """Collect a link if the element is an <a> tag."""
+    if element.name != 'a':
+        return
+    href = element.get('href', '')
+    if not href or href.startswith(('#', 'javascript:', 'mailto:', 'tel:')):
+        return
+    full = href if href.startswith('http') else urljoin(base_url, href) if base_url else href
+    link_text = element.get_text(strip=True)
+    links.append({"url": full, "title": link_text})
 
 
 def _extract_tab_sections(soup: BeautifulSoup) -> List[Dict]:
@@ -817,6 +1035,79 @@ def _categorize_benefit(url: str, text: str) -> str:
     return 'general'
 
 
+def _clean_section_text(text: str) -> str:
+    """
+    Clean up extracted section text to be readable:
+    - Collapse multiple blank lines to max one
+    - Normalize whitespace within lines  
+    - Remove duplicate/near-duplicate consecutive lines
+    - Remove lines that are substrings of nearby lines (nested extraction artifacts)
+    - Strip excessive Unicode whitespace
+    """
+    if not text:
+        return ""
+
+    # First pass: normalize all whitespace characters
+    # Replace non-breaking spaces, zero-width chars, etc.
+    text = re.sub(r'[\u00a0\u200b\u200c\u200d\ufeff]', ' ', text)
+    # Collapse runs of spaces/tabs within lines (but preserve \n)
+    text = re.sub(r'[^\S\n]+', ' ', text)
+    # Collapse 3+ newlines to 2
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    lines = text.split('\n')
+    cleaned = []
+    prev_line = ''
+    prev_nonempty = ''
+
+    for line in lines:
+        line = line.strip()
+
+        # Skip empty lines if previous was also empty
+        if not line:
+            if cleaned and cleaned[-1] == '':
+                continue
+            cleaned.append('')
+            prev_line = ''
+            continue
+
+        # Skip exact duplicate of previous line
+        if line == prev_line:
+            continue
+
+        # Skip if this line is contained within the previous non-empty line
+        # (artifact of extracting both parent and child text)
+        if prev_nonempty and line in prev_nonempty and len(line) < len(prev_nonempty) * 0.9:
+            continue
+
+        # Skip if previous line is contained within this one
+        # (keep the longer one — replace previous)
+        if prev_nonempty and prev_nonempty in line and len(prev_nonempty) < len(line) * 0.9:
+            if cleaned and cleaned[-1] == prev_nonempty:
+                cleaned[-1] = line
+                prev_line = line
+                prev_nonempty = line
+                continue
+
+        cleaned.append(line)
+        prev_line = line
+        if line:
+            prev_nonempty = line
+
+    # Remove leading/trailing empty lines
+    while cleaned and cleaned[0] == '':
+        cleaned.pop(0)
+    while cleaned and cleaned[-1] == '':
+        cleaned.pop()
+
+    result = '\n'.join(cleaned)
+    
+    # Final safety: collapse any remaining excessive blank lines
+    result = re.sub(r'\n{3,}', '\n\n', result)
+    
+    return result
+
+
 def _normalize_section_name(name: str) -> str:
     """Normalize a heading into a section key."""
     name = re.sub(r'[^a-zA-Z0-9\s]', '', name.lower().strip())
@@ -851,6 +1142,32 @@ def _infer_benefit_name_from_text(text: str) -> str:
     """Infer benefit name from first line of text."""
     first_line = text.split('\n')[0].strip()
     return first_line[:100] if first_line else "Unnamed Benefit"
+
+
+def _is_relevant_link(url: str, title: str = "") -> bool:
+    """Check if a link is relevant for credit card benefit extraction."""
+    combined = (url + " " + title).lower()
+
+    # Skip common non-benefit pages
+    skip_keywords = [
+        'apply-now', 'apply-online', 'login', 'sign-in', 'register',
+        'contact-us', 'about-us', 'career', 'investor', 'press',
+        'privacy', 'cookie', 'sitemap', 'faq', 'download-app',
+        'locate-us', 'atm-locator', 'branch', 'customer-service',
+    ]
+    if any(kw in combined for kw in skip_keywords):
+        return False
+
+    # Relevant keywords
+    relevant_keywords = [
+        'benefit', 'feature', 'lounge', 'golf', 'cinema', 'movie', 'insurance',
+        'shield', 'reward', 'offer', 'dining', 'travel', 'cashback', 'terms',
+        'condition', 'fee', 'charge', 'learn-more', 'airport',
+        'concierge', 'lifestyle', 'valet', 'points', 'miles', 'privilege',
+        'discount', 'mastercard', 'visa', 'plus-points', 'activate',
+        'earn', 'redeem', 'booking', 'hotel', 'spa', 'fitness',
+    ]
+    return any(kw in combined for kw in relevant_keywords)
 
 
 def _extract_links_from_soup(soup: BeautifulSoup, base_url: str) -> List[Dict]:

@@ -93,31 +93,79 @@ export default function StructuredExtractionWizard() {
     setLoading(true); setLoadingMsg('Selecting cards...'); setError('');
     try {
       // Select cards
-      await fetch(`${API}/sessions/${sessionId}/select-cards`, {
+      const selRes = await fetch(`${API}/sessions/${sessionId}/select-cards`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ card_ids: Array.from(selectedCardIds) }),
       });
+      if (!selRes.ok) {
+        const selData = await selRes.json();
+        throw new Error(selData.detail || 'Failed to select cards');
+      }
 
       // Process depth 1
       setLoadingMsg('Scraping card detail pages & extracting sections...');
       const res = await fetch(`${API}/sessions/${sessionId}/process-depth1`, { method: 'POST' });
       const data = await res.json();
+      console.log('[V5] Depth 1 response:', data);
       if (!res.ok) throw new Error(data.detail || 'Depth 1 processing failed');
       setDepth1Results(data);
+
+      // Auto-load sections for the first card
+      if (data.results?.length) {
+        const firstCard = data.results[0];
+        if (firstCard.card_id && firstCard.sections > 0) {
+          try {
+            const secRes = await fetch(`${API}/sessions/${sessionId}/card-sections/${firstCard.card_id}`);
+            const secData = await secRes.json();
+            setCardSections(prev => ({ ...prev, [firstCard.card_id]: secData }));
+            setExpandedCard(firstCard.card_id);
+          } catch (e) { console.warn('Failed to auto-load sections:', e); }
+        }
+      }
+
       setStep(3);
-    } catch (err) { setError(err.message); }
+    } catch (err) {
+      console.error('[V5] Depth 1 error:', err);
+      setError(err.message);
+    }
     finally { setLoading(false); setLoadingMsg(''); }
   };
 
   // Load sections for a card
-  const loadCardSections = async (cardId) => {
-    if (cardSections[cardId]) { setExpandedCard(expandedCard === cardId ? null : cardId); return; }
+  const loadCardSections = async (cardId, forceReload = false) => {
+    if (!forceReload && expandedCard === cardId && cardSections[cardId]) {
+      setExpandedCard(null);
+      return;
+    }
     try {
       const res = await fetch(`${API}/sessions/${sessionId}/card-sections/${cardId}`);
       const data = await res.json();
-      setCardSections(prev => ({ ...prev, [cardId]: data.sections || [] }));
+      console.log('[V5] Card sections:', data);
+      setCardSections(prev => ({ ...prev, [cardId]: data }));
       setExpandedCard(cardId);
+    } catch (err) { setError(err.message); }
+  };
+
+  // Delete a section
+  const deleteSection = async (sectionId, cardId) => {
+    if (!window.confirm('Delete this section? Its depth-2 URLs will be skipped.')) return;
+    try {
+      const res = await fetch(`${API}/sessions/${sessionId}/sections/${sectionId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Delete failed');
+      // Reload sections
+      await loadCardSections(cardId, true);
+    } catch (err) { setError(err.message); }
+  };
+
+  // Toggle section approval
+  const toggleSectionApproval = async (sectionId, cardId) => {
+    try {
+      const res = await fetch(`${API}/sessions/${sessionId}/sections/${sectionId}/toggle-approval`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Toggle failed');
+      await loadCardSections(cardId, true);
     } catch (err) { setError(err.message); }
   };
 
@@ -313,37 +361,122 @@ export default function StructuredExtractionWizard() {
             </div>
           )}
 
-          {/* Card sections preview */}
-          {depth1Results?.results?.map(result => (
-            <div key={result.card_id} className="border rounded-lg overflow-hidden">
-              <div className="p-3 bg-gray-50 flex items-center gap-2 cursor-pointer hover:bg-gray-100"
-                onClick={() => loadCardSections(result.card_id)}>
-                <CreditCard size={16} className="text-gray-400" />
-                <span className="font-medium text-gray-700">{result.card_name}</span>
-                <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full ml-auto">{result.sections} sections</span>
-                {expandedCard === result.card_id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-              </div>
-              {expandedCard === result.card_id && cardSections[result.card_id] && (
-                <div className="divide-y">
-                  {cardSections[result.card_id].map((sec, i) => (
-                    <div key={i} className="p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span>{CATEGORY_ICONS[sec.section_type] || '📄'}</span>
-                        <span className="font-medium text-sm text-gray-700">{sec.section_name}</span>
-                        <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{sec.section_type}</span>
-                      </div>
-                      <p className="text-xs text-gray-600 whitespace-pre-wrap bg-gray-50 p-2 rounded max-h-32 overflow-y-auto">{sec.content}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
+          {!depth1Results && (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm">
+              No depth 1 results available. Try going back and re-processing.
             </div>
-          ))}
+          )}
 
-          <button onClick={processDepth2} disabled={loading}
-            className="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 flex items-center justify-center gap-2 font-medium disabled:opacity-50">
-            <Zap size={20} /> Process Shared Benefit Pages (Depth 2-3)
-          </button>
+          {/* Card sections preview */}
+          {depth1Results?.results?.length > 0 ? (
+            depth1Results.results.map(result => (
+              <div key={result.card_id} className="border rounded-lg overflow-hidden">
+                <div className="p-3 bg-gray-50 flex items-center gap-2 cursor-pointer hover:bg-gray-100"
+                  onClick={() => loadCardSections(result.card_id)}>
+                  <CreditCard size={16} className="text-gray-400" />
+                  <span className="font-medium text-gray-700">{result.card_name}</span>
+                  {result.error && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Error: {result.error}</span>}
+                  <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full ml-auto">{result.sections} sections</span>
+                  <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">{result.urls_discovered} URLs</span>
+                  {expandedCard === result.card_id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </div>
+                {expandedCard === result.card_id && cardSections[result.card_id] && (
+                  <div className="divide-y">
+                    {(cardSections[result.card_id].sections || []).length === 0 && (
+                      <div className="p-3 text-sm text-gray-500">No sections extracted from this card page.</div>
+                    )}
+                    {(cardSections[result.card_id].sections || []).map((sec, i) => {
+                      const isApproved = sec.is_approved !== false;
+                      const isSubSection = !!sec.parent_section;
+                      return (
+                        <div key={sec.section_id || i} className={`p-3 ${!isApproved ? 'opacity-50 bg-gray-50' : ''} ${isSubSection ? 'ml-6 border-l-2 border-teal-200' : ''}`}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <button onClick={(e) => { e.stopPropagation(); toggleSectionApproval(sec.section_id, result.card_id); }}
+                              className="shrink-0" title={isApproved ? 'Click to skip this section' : 'Click to include this section'}>
+                              {isApproved ? <CheckSquare size={16} className="text-teal-600" /> : <Square size={16} className="text-gray-400" />}
+                            </button>
+                            <span>{CATEGORY_ICONS[sec.section_type] || '📄'}</span>
+                            <span className="font-medium text-sm text-gray-700 flex-1">{sec.heading_text || sec.section_name}</span>
+                            {sec.is_expandable && <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">expandable</span>}
+                            {isSubSection && <span className="text-xs bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded">sub-section</span>}
+                            <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{sec.section_type}</span>
+                            {sec.link_count > 0 && (
+                              <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{sec.link_count} links</span>
+                            )}
+                            {sec.mapped_url_count > 0 && (
+                              <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">{sec.mapped_url_count} depth-2</span>
+                            )}
+                            <button onClick={(e) => { e.stopPropagation(); deleteSection(sec.section_id, result.card_id); }}
+                              className="text-red-400 hover:text-red-600 shrink-0" title="Delete section">
+                              <X size={14} />
+                            </button>
+                          </div>
+                          <div className={isSubSection ? 'ml-2' : 'ml-7'}>
+                            <p className="text-xs text-gray-600 whitespace-pre-wrap bg-white border p-2 rounded max-h-32 overflow-y-auto">{sec.content}</p>
+                            {/* Mapped URLs */}
+                            {sec.mapped_urls?.length > 0 && (
+                              <div className="mt-2 space-y-1">
+                                <span className="text-xs font-medium text-gray-500">Depth 2 URLs from this section:</span>
+                                {sec.mapped_urls.map((u, ui) => (
+                                  <div key={ui} className="flex items-center gap-1.5 text-xs">
+                                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                      u.status === 'skipped' ? 'bg-gray-300' : u.status === 'completed' ? 'bg-green-400' : 'bg-blue-400'
+                                    }`} />
+                                    <a href={u.url} target="_blank" rel="noopener noreferrer"
+                                      className="text-blue-600 hover:underline truncate flex-1" title={u.url}>
+                                      {u.title || u.url.split('/').pop() || u.url}
+                                    </a>
+                                    <span className="text-gray-400 shrink-0">{u.status}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Unmapped URLs */}
+                    {cardSections[result.card_id].unmapped_urls?.length > 0 && (
+                      <div className="p-3 bg-yellow-50">
+                        <span className="text-xs font-medium text-yellow-700">
+                          {cardSections[result.card_id].unmapped_url_count} URLs not mapped to any section:
+                        </span>
+                        <div className="mt-1 space-y-0.5">
+                          {cardSections[result.card_id].unmapped_urls.slice(0, 10).map((u, ui) => (
+                            <div key={ui} className="flex items-center gap-1.5 text-xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0" />
+                              <a href={u.url} target="_blank" rel="noopener noreferrer"
+                                className="text-blue-600 hover:underline truncate flex-1">
+                                {u.title || u.url.split('/').pop() || u.url}
+                              </a>
+                            </div>
+                          ))}
+                          {cardSections[result.card_id].unmapped_url_count > 10 && (
+                            <span className="text-xs text-gray-400">+{cardSections[result.card_id].unmapped_url_count - 10} more</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))
+          ) : depth1Results && (
+            <div className="p-4 bg-gray-50 border rounded-lg text-gray-500 text-sm">
+              No card results returned. Check server logs for errors.
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <button onClick={() => setStep(2)} className="px-4 py-2 border rounded-lg hover:bg-gray-50 flex items-center gap-1">
+              <ChevronLeft size={18} /> Back
+            </button>
+            <button onClick={processDepth2} disabled={loading || !depth1Results?.depth2_urls_discovered}
+              className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 flex items-center justify-center gap-2 font-medium disabled:opacity-50">
+              <Zap size={20} /> Process Shared Benefit Pages (Depth 2-3)
+            </button>
+          </div>
         </div>
       )}
 

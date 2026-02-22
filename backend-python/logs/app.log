@@ -1,44 +1,33 @@
-2026-02-19 16:04:33 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
-2026-02-19 16:04:33 | INFO     | app.services.enhanced_llm_service:__init__:45 - EnhancedLLMService initialized: base_url=http://localhost:11434, model=phi
-2026-02-19 16:04:33 | WARNING  | app.api.routes.batch:<module>:22 - batch_service unavailable (ExtractionJob model removed). Batch endpoints disabled.
-2026-02-19 16:04:34 | INFO     | app.main:lifespan:30 - Starting application...
-2026-02-19 16:04:34 | INFO     | app.core.database:connect:27 - Connecting to MongoDB at mongodb://localhost:27017
-2026-02-19 16:04:34 | INFO     | app.core.database:connect:40 - MongoDB connection established successfully
-2026-02-19 16:04:34 | INFO     | app.core.database:connect:57 - Beanie ODM initialized successfully
-2026-02-19 16:04:34 | INFO     | app.core.database:create_indexes:73 - Creating database indexes...
-2026-02-19 16:04:34 | INFO     | app.core.database:create_indexes:82 - Database indexes created successfully
-2026-02-19 16:04:34 | INFO     | app.main:lifespan:35 - MongoDB connected
-2026-02-19 16:04:34 | INFO     | app.core.redis_client:connect:26 - Connecting to Redis at redis://localhost:6379
-2026-02-19 16:04:34 | INFO     | app.core.redis_client:connect:41 - Redis connection established successfully
-2026-02-19 16:04:34 | INFO     | app.main:lifespan:39 - Redis connected
-2026-02-19 16:04:34 | INFO     | app.main:lifespan:41 - Application started successfully on development environment
-2026-02-19 16:05:01 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1391053 chars from https://www.emiratesnbd.com/en/cards/credit-cards
-2026-02-19 16:09:45 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
-2026-02-19 16:11:17 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1390348 chars from https://www.emiratesnbd.com/en/cards/credit-cards
-2026-02-19 16:11:50 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
-2026-02-19 21:26:54 | INFO     | app.main:lifespan:50 - Shutting down application...
-2026-02-19 21:26:54 | INFO     | app.core.database:disconnect:91 - Closing MongoDB connection
-2026-02-19 21:26:54 | INFO     | app.core.database:disconnect:95 - MongoDB connection closed
-2026-02-19 21:26:54 | INFO     | app.main:lifespan:54 - MongoDB disconnected
-2026-02-19 21:26:54 | INFO     | app.core.redis_client:disconnect:51 - Closing Redis connection
-2026-02-19 21:26:54 | INFO     | app.core.redis_client:disconnect:58 - Redis connection closed
-2026-02-19 21:26:54 | INFO     | app.main:lifespan:57 - Redis disconnected
-2026-02-19 21:26:54 | INFO     | app.main:lifespan:59 - Application shutdown complete
-2026-02-19 23:11:07 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
-2026-02-19 23:11:07 | INFO     | app.services.enhanced_llm_service:__init__:45 - EnhancedLLMService initialized: base_url=http://localhost:11434, model=phi
-2026-02-19 23:11:07 | WARNING  | app.api.routes.batch:<module>:22 - batch_service unavailable (ExtractionJob model removed). Batch endpoints disabled.
-2026-02-19 23:11:07 | INFO     | app.main:lifespan:30 - Starting application...
-2026-02-19 23:11:07 | INFO     | app.core.database:connect:27 - Connecting to MongoDB at mongodb://localhost:27017
-2026-02-19 23:11:07 | INFO     | app.core.database:connect:40 - MongoDB connection established successfully
-2026-02-19 23:11:07 | INFO     | app.core.database:connect:57 - Beanie ODM initialized successfully
-2026-02-19 23:11:07 | INFO     | app.core.database:create_indexes:73 - Creating database indexes...
-2026-02-19 23:11:07 | INFO     | app.core.database:create_indexes:82 - Database indexes created successfully
-2026-02-19 23:11:07 | INFO     | app.main:lifespan:35 - MongoDB connected
-2026-02-19 23:11:07 | INFO     | app.core.redis_client:connect:26 - Connecting to Redis at redis://localhost:6379
-2026-02-19 23:11:07 | INFO     | app.core.redis_client:connect:41 - Redis connection established successfully
-2026-02-19 23:11:07 | INFO     | app.main:lifespan:39 - Redis connected
-2026-02-19 23:11:07 | INFO     | app.main:lifespan:41 - Application started successfully on development environment
-2026-02-19 23:11:35 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1389824 chars from https://www.emiratesnbd.com/en/cards/credit-cards
-2026-02-19 23:14:03 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
-2026-02-20 15:20:42 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1390675 chars from https://www.emiratesnbd.com/en/cards/credit-cards
-2026-02-20 15:22:23 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1390370 chars from https://www.emiratesnbd.com/en/cards/credit-cards
+2026-02-22 22:10:08 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
+2026-02-22 22:10:08 | INFO     | app.services.enhanced_llm_service:__init__:45 - EnhancedLLMService initialized: base_url=http://localhost:11434, model=phi
+2026-02-22 22:10:08 | WARNING  | app.api.routes.batch:<module>:22 - batch_service unavailable (ExtractionJob model removed). Batch endpoints disabled.
+2026-02-22 22:10:08 | INFO     | app.main:lifespan:30 - Starting application...
+2026-02-22 22:10:08 | INFO     | app.core.database:connect:27 - Connecting to MongoDB at mongodb://localhost:27017
+2026-02-22 22:10:08 | INFO     | app.core.database:connect:40 - MongoDB connection established successfully
+2026-02-22 22:10:08 | INFO     | app.core.database:connect:57 - Beanie ODM initialized successfully
+2026-02-22 22:10:08 | INFO     | app.core.database:create_indexes:73 - Creating database indexes...
+2026-02-22 22:10:08 | INFO     | app.core.database:create_indexes:82 - Database indexes created successfully
+2026-02-22 22:10:08 | INFO     | app.main:lifespan:35 - MongoDB connected
+2026-02-22 22:10:08 | INFO     | app.core.redis_client:connect:26 - Connecting to Redis at redis://localhost:6379
+2026-02-22 22:10:08 | INFO     | app.core.redis_client:connect:41 - Redis connection established successfully
+2026-02-22 22:10:08 | INFO     | app.main:lifespan:39 - Redis connected
+2026-02-22 22:10:08 | INFO     | app.main:lifespan:41 - Application started successfully on development environment
+2026-02-22 22:10:36 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1393754 chars from https://www.emiratesnbd.com/en/cards/credit-cards
+2026-02-22 22:10:45 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
+2026-02-22 22:13:43 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
+2026-02-22 22:13:50 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 67764 chars from https://www.emiratesnbd.com/en/campaigns/credit-card-apply?campaign=mastercard-platinum-credit-card
+2026-02-22 22:13:58 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1051789 chars from https://www.emiratesnbd.com/en/help-and-support/earning-plus-points
+2026-02-22 22:14:07 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1046542 chars from https://www.emiratesnbd.com/en/help-and-support/airport-lounge-access-mastercard
+2026-02-22 22:14:14 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1002028 chars from https://www.emiratesnbd.com/en/help-and-support/golf-privileges
+2026-02-22 22:14:14 | INFO     | app.services.ollama_client:_do_call:115 - LLM call attempt 1/2 model=phi prompt=1123 chars
+2026-02-22 22:14:59 | INFO     | app.services.ollama_client:_do_call:128 - LLM response: 5141 chars
+2026-02-22 22:15:07 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1063259 chars from https://www.emiratesnbd.com/en/help-and-support/mastercard-benefits
+2026-02-22 22:15:07 | INFO     | app.services.ollama_client:_do_call:115 - LLM call attempt 1/2 model=phi prompt=7019 chars
+2026-02-22 22:15:25 | INFO     | app.services.ollama_client:_do_call:128 - LLM response: 1392 chars
+2026-02-22 22:15:34 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1166705 chars from https://www.emiratesnbd.com/en/cards/credit-cards/mastercard-platinum-credit-card#tab_deals_dining
+2026-02-22 22:15:43 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1166689 chars from https://www.emiratesnbd.com/en/cards/credit-cards/mastercard-platinum-credit-card#tab_deals_travel
+2026-02-22 22:15:53 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1166694 chars from https://www.emiratesnbd.com/en/cards/credit-cards/mastercard-platinum-credit-card#tab_deals_shopping
+2026-02-22 22:16:02 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1166703 chars from https://www.emiratesnbd.com/en/cards/credit-cards/mastercard-platinum-credit-card#tab_deals_0-installment
+2026-02-22 22:16:11 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1166712 chars from https://www.emiratesnbd.com/en/cards/credit-cards/mastercard-platinum-credit-card#tab_deals_goodtimes
+2026-02-22 22:16:21 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1032171 chars from https://www.emiratesnbd.com/en/deals/bon-appetit/copthorne-hotel-dubai-gazebo-terrace
+2026-02-22 22:16:30 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1031215 chars from https://www.emiratesnbd.com/en/deals/bon-appetit/copthorne-hotel-dubai-delice-caf
