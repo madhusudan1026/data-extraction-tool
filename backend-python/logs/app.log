@@ -1,27 +1,22 @@
-2026-02-24 07:40:49 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
-2026-02-24 07:40:49 | INFO     | app.services.enhanced_llm_service:__init__:45 - EnhancedLLMService initialized: base_url=http://localhost:11434, model=phi
-2026-02-24 07:40:49 | WARNING  | app.api.routes.batch:<module>:22 - batch_service unavailable (ExtractionJob model removed). Batch endpoints disabled.
-2026-02-24 07:40:50 | INFO     | app.main:lifespan:30 - Starting application...
-2026-02-24 07:40:50 | INFO     | app.core.database:connect:27 - Connecting to MongoDB at mongodb://localhost:27017
-2026-02-24 07:40:50 | INFO     | app.core.database:connect:40 - MongoDB connection established successfully
-2026-02-24 07:40:50 | INFO     | app.core.database:connect:57 - Beanie ODM initialized successfully
-2026-02-24 07:40:50 | INFO     | app.core.database:create_indexes:73 - Creating database indexes...
-2026-02-24 07:40:50 | INFO     | app.core.database:create_indexes:82 - Database indexes created successfully
-2026-02-24 07:40:50 | INFO     | app.main:lifespan:35 - MongoDB connected
-2026-02-24 07:40:50 | INFO     | app.core.redis_client:connect:26 - Connecting to Redis at redis://localhost:6379
-2026-02-24 07:40:50 | INFO     | app.core.redis_client:connect:41 - Redis connection established successfully
-2026-02-24 07:40:50 | INFO     | app.main:lifespan:39 - Redis connected
-2026-02-24 07:40:50 | INFO     | app.main:lifespan:41 - Application started successfully on development environment
-2026-02-24 07:41:09 | INFO     | app.api.routes.vector_routes:get_card_chunks:576 - [Pipeline] get_card_chunks for 'Mastercard Platinum Credit Card' — ChromaDB total docs: 0
-2026-02-24 07:41:09 | WARNING  | app.api.routes.vector_routes:get_card_chunks:579 - [Pipeline] ChromaDB is EMPTY. User needs to vectorize data in DataStore tab first.
-2026-02-24 07:41:09 | INFO     | app.api.routes.vector_routes:get_card_chunks:604 - [Pipeline] Strategy 1 - Exact card_name 'Mastercard Platinum Credit Card': 0 chunks
-2026-02-24 07:41:09 | INFO     | app.api.routes.vector_routes:get_card_chunks:631 - [Pipeline] Strategy 2 - Bank 'emirates_nbd' card_names match: 0 from 0 bank chunks
-2026-02-24 07:41:09 | INFO     | app.api.routes.vector_routes:get_card_chunks:658 - [Pipeline] Strategy 3 - URL match 'https://www.emiratesnbd.com/en/cards/credit-cards/mastercard': 0 chunks
-2026-02-24 07:41:09 | INFO     | app.api.routes.vector_routes:get_card_chunks:684 - [Pipeline] Strategy 3 - URL match 'https://www.emiratesnbd.com/en/cards/credit-cards/': 0 chunks
-2026-02-24 07:41:09 | INFO     | app.api.routes.vector_routes:get_card_chunks:719 - [Pipeline] Strategy 4 - Text match for 'Mastercard Platinum Credit Card': 0 chunks
-2026-02-24 07:41:09 | INFO     | app.api.routes.vector_routes:get_card_chunks:723 - [Pipeline] TOTAL chunks for 'Mastercard Platinum Credit Card': 0
-2026-02-24 07:42:02 | INFO     | app.api.routes.vector_routes:get_card_chunks:576 - [Pipeline] get_card_chunks for 'Mastercard Platinum Credit Card' — ChromaDB total docs: 784
-2026-02-24 07:42:02 | INFO     | app.api.routes.vector_routes:get_card_chunks:604 - [Pipeline] Strategy 1 - Exact card_name 'Mastercard Platinum Credit Card': 784 chunks
-2026-02-24 07:42:02 | INFO     | app.api.routes.vector_routes:get_card_chunks:631 - [Pipeline] Strategy 2 - Bank 'emirates_nbd' card_names match: 0 from 784 bank chunks
-2026-02-24 07:42:02 | INFO     | app.api.routes.vector_routes:get_card_chunks:658 - [Pipeline] Strategy 3 - URL match 'https://www.emiratesnbd.com/en/cards/credit-cards/mastercard': 0 chunks
-2026-02-24 07:42:02 | INFO     | app.api.routes.vector_routes:get_card_chunks:723 - [Pipeline] TOTAL chunks for 'Mastercard Platinum Credit Card': 784
+2026-02-24 15:37:29 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
+2026-02-24 15:37:29 | INFO     | app.services.enhanced_llm_service:__init__:45 - EnhancedLLMService initialized: base_url=http://localhost:11434, model=phi
+2026-02-24 15:37:29 | WARNING  | app.api.routes.batch:<module>:22 - batch_service unavailable (ExtractionJob model removed). Batch endpoints disabled.
+2026-02-24 15:37:29 | INFO     | app.main:lifespan:30 - Starting application...
+2026-02-24 15:37:29 | INFO     | app.core.database:connect:27 - Connecting to MongoDB at mongodb://localhost:27017
+2026-02-24 15:37:29 | INFO     | app.core.database:connect:40 - MongoDB connection established successfully
+2026-02-24 15:37:29 | INFO     | app.core.database:connect:57 - Beanie ODM initialized successfully
+2026-02-24 15:37:29 | INFO     | app.core.database:create_indexes:73 - Creating database indexes...
+2026-02-24 15:37:29 | INFO     | app.core.database:create_indexes:82 - Database indexes created successfully
+2026-02-24 15:37:29 | INFO     | app.main:lifespan:35 - MongoDB connected
+2026-02-24 15:37:29 | INFO     | app.core.redis_client:connect:26 - Connecting to Redis at redis://localhost:6379
+2026-02-24 15:37:29 | INFO     | app.core.redis_client:connect:41 - Redis connection established successfully
+2026-02-24 15:37:29 | INFO     | app.main:lifespan:39 - Redis connected
+2026-02-24 15:37:29 | INFO     | app.main:lifespan:41 - Application started successfully on development environment
+2026-02-24 15:38:23 | INFO     | app.main:lifespan:50 - Shutting down application...
+2026-02-24 15:38:23 | INFO     | app.core.database:disconnect:91 - Closing MongoDB connection
+2026-02-24 15:38:23 | INFO     | app.core.database:disconnect:95 - MongoDB connection closed
+2026-02-24 15:38:23 | INFO     | app.main:lifespan:54 - MongoDB disconnected
+2026-02-24 15:38:23 | INFO     | app.core.redis_client:disconnect:51 - Closing Redis connection
+2026-02-24 15:38:23 | INFO     | app.core.redis_client:disconnect:58 - Redis connection closed
+2026-02-24 15:38:23 | INFO     | app.main:lifespan:57 - Redis disconnected
+2026-02-24 15:38:23 | INFO     | app.main:lifespan:59 - Application shutdown complete

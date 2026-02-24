@@ -103,8 +103,11 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> List[str]:
-        """Get CORS origins as a list."""
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
+        """Get CORS origins as a list. Supports '*' for all origins."""
+        origins = [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
+        if "*" in origins:
+            return ["*"]
+        return origins
 
     model_config = SettingsConfigDict(
         env_file=".env",

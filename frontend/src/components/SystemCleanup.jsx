@@ -4,7 +4,7 @@ import {
   ChevronDown, ChevronUp, Shield
 } from 'lucide-react';
 
-const API = 'http://localhost:8000/api/v5/extraction';
+import { API_V5 as API } from '../config';
 
 const GROUPS = [
   {

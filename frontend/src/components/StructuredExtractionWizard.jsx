@@ -19,7 +19,7 @@ import {
   Layers, Globe, Link, Building2, Settings2
 } from 'lucide-react';
 
-const API = 'http://localhost:8000/api/v5/extraction';
+import { API_V5 as API } from '../config';
 
 const CATEGORY_ICONS = {
   cashback: '💰', lounge: '✈️', golf: '🏌️', dining: '🍽️',

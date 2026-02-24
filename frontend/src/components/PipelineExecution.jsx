@@ -14,9 +14,7 @@ import {
   CheckSquare, Square, Database, Search
 } from 'lucide-react';
 
-const API_BASE = 'http://localhost:8000/api/v4/extraction';
-const API_V2 = 'http://localhost:8000/api/v2/extraction';
-const API_VECTOR = 'http://localhost:8000/api/v4/vector';
+import { API_V4 as API_BASE, API_V2, API_VECTOR } from '../config';
 
 const CATEGORY_PIPELINE_MAP = {
   cashback: ['cashback'], lounge: ['lounge_access'], golf: ['golf'],

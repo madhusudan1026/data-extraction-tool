@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2, Trash2, Eye, RefreshCw, Database, FileText, Globe, File, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 
-const API_V2 = 'http://localhost:8000/api/v2/extraction';
+import { API_V2 } from '../config';
 
 function ExtractionsList() {
   const [extractions, setExtractions] = useState([]);

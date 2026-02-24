@@ -13,9 +13,7 @@ import {
   Loader2, ExternalLink, RefreshCw, CreditCard, X, Eye
 } from 'lucide-react';
 
-const API_BASE = 'http://localhost:8000/api/v4/extraction';
-const API_V2 = 'http://localhost:8000/api/v2/extraction';
-const API_VECTOR = 'http://localhost:8000/api/v4/vector';
+import { API_V4 as API_BASE, API_V2, API_VECTOR } from '../config';
 
 const CATEGORY_ICONS = {
   cashback: '💰', lounge: '✈️', golf: '🏌️', dining: '🍽️',
