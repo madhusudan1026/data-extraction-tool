@@ -41,6 +41,7 @@ export default function DataStoreVectorization() {
   const [vectorData, setVectorData] = useState(null);
   const [expandedChunkSources, setExpandedChunkSources] = useState(new Set());
   const [reindexVectors, setReindexVectors] = useState(false);
+  const [clearOldVectors, setClearOldVectors] = useState(true);
 
   // Category viewing (shared between Step 2 and 3)
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -117,10 +118,15 @@ export default function DataStoreVectorization() {
     try {
       const res = await fetch(`${API_VECTOR}/index-record`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ saved_id: selectedRecord.saved_id })
+        body: JSON.stringify({ saved_id: selectedRecord.saved_id, clear_old: clearOldVectors })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Vector indexing failed');
+      if (data.success === false) {
+        setError(data.error || `Indexing returned 0 chunks. Is Ollama running with nomic-embed-text?`);
+        setVectorResult(data);
+        return;
+      }
       setVectorResult(data);
       const vRes = await fetch(`${API_VECTOR}/record-data/${selectedRecord.saved_id}`);
       if (vRes.ok) setVectorData(await vRes.json());
@@ -158,7 +164,7 @@ export default function DataStoreVectorization() {
     setChunkPreview(null); setVectorResult(null); setVectorData(null);
     setSelectedCategory(null); setCategoryChunks([]);
     setExpandedSources(new Set()); setExpandedChunkSources(new Set());
-    setError(''); setReindexVectors(false);
+    setError(''); setReindexVectors(false); setClearOldVectors(true);
   };
 
   const toggle = (set, setFn, key) => {
@@ -518,13 +524,28 @@ export default function DataStoreVectorization() {
                 })}
               </div>
 
+              {/* Clear old vectors option */}
+              <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-orange-800">Clear old vectors before indexing</div>
+                  <div className="text-xs text-orange-600">Removes stale data from previous extractions for this card</div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-500">{clearOldVectors ? 'Yes, clear first' : 'Keep old data'}</span>
+                  <button onClick={() => setClearOldVectors(!clearOldVectors)}
+                    className={`w-12 h-6 rounded-full transition-colors ${clearOldVectors ? 'bg-orange-500' : 'bg-gray-300'}`}>
+                    <div className={`w-5 h-5 bg-white rounded-full shadow transform transition-transform ${clearOldVectors ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+              </div>
+
               <div className="flex gap-3">
                 <button onClick={() => setStep(1)} className="px-4 py-2 border rounded-lg hover:bg-gray-50 flex items-center gap-1">
                   <ChevronLeft size={18} /> Back
                 </button>
                 <button onClick={indexVectors} disabled={loading || !chunkPreview.vector_store_available}
                   className="flex-1 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center justify-center gap-2 font-medium disabled:opacity-50">
-                  {loading ? <><Loader2 size={20} className="animate-spin" /> Indexing...</> : <><Database size={20} /> Index {chunkPreview.total_chunks} Chunks into ChromaDB</>}
+                  {loading ? <><Loader2 size={20} className="animate-spin" /> Indexing...</> : <><Database size={20} /> {clearOldVectors ? 'Clear & ' : ''}Index {chunkPreview.total_chunks} Chunks into ChromaDB</>}
                 </button>
               </div>
               {!chunkPreview.vector_store_available && (
@@ -538,13 +559,35 @@ export default function DataStoreVectorization() {
           {/* Post-index: Vector Data View */}
           {vectorResult && (
             <div className="space-y-4">
-              <div className="p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
-                <CheckCircle size={24} className="text-green-600" />
-                <div>
-                  <h3 className="font-bold text-green-800">Indexed Successfully!</h3>
-                  <p className="text-sm text-green-600">{vectorResult.vector_chunks} chunks stored in ChromaDB</p>
+              {vectorResult.success === false ? (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <h3 className="font-bold text-red-800 flex items-center gap-2">
+                    <AlertCircle size={20} /> Vectorization Failed
+                  </h3>
+                  <p className="text-sm text-red-700 mt-1">{vectorResult.error}</p>
+                  <div className="mt-2 p-2 bg-red-100 rounded text-xs text-red-800 font-mono">
+                    $ ollama pull nomic-embed-text<br/>
+                    $ ollama serve
+                  </div>
+                  {vectorResult.old_chunks_cleared > 0 && (
+                    <p className="text-sm text-orange-600 mt-2">⚠ {vectorResult.old_chunks_cleared} old chunks were cleared before this failed attempt.</p>
+                  )}
                 </div>
-              </div>
+              ) : (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
+                  <CheckCircle size={24} className="text-green-600" />
+                  <div>
+                    <h3 className="font-bold text-green-800">Indexed Successfully!</h3>
+                    <p className="text-sm text-green-600">
+                      {vectorResult.vector_chunks} chunks stored in ChromaDB
+                      {vectorResult.total_docs_in_store && <span className="text-gray-500"> (store total: {vectorResult.total_docs_in_store})</span>}
+                      {vectorResult.old_chunks_cleared > 0 && (
+                        <span className="text-orange-600 ml-1">({vectorResult.old_chunks_cleared} old chunks cleared first)</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {vectorData && (
                 <div className="space-y-4">

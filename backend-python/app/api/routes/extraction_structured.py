@@ -30,9 +30,16 @@ router = APIRouter(prefix="/v5/extraction", tags=["Structured Extraction V5"])
 # ============= MODELS =============
 
 class CreateStructuredSessionRequest(BaseModel):
+    # Mode: bank_wide (discover cards from bank) or single_card (direct card URL)
+    mode: str = Field("bank_wide", pattern="^(bank_wide|single_card)$")
+    # Bank-wide mode
     bank_key: Optional[str] = None
     custom_bank_url: Optional[str] = None
     custom_bank_name: Optional[str] = None
+    # Single card mode
+    single_card_url: Optional[str] = None
+    single_card_name: Optional[str] = None
+    # Options
     use_playwright: bool = True
     max_depth: int = Field(3, ge=1, le=5)
 
@@ -71,10 +78,104 @@ def _hash_url(url: str) -> str:
 @router.post("/sessions")
 async def create_structured_session(request: CreateStructuredSessionRequest):
     """
-    Create session and immediately run Depth 0: discover all cards from bank listing page.
+    Create session.
+    - bank_wide mode: Depth 0 discovers all cards from bank listing page.
+    - single_card mode: Skip depth 0, create one card from direct URL, jump to card selection.
     """
     db = await get_database()
 
+    # ---- SINGLE CARD MODE ----
+    if request.mode == "single_card":
+        if not request.single_card_url:
+            raise HTTPException(status_code=400, detail="single_card_url required for single_card mode")
+
+        card_url = request.single_card_url.strip()
+        parsed = urlparse(card_url)
+        bank_key = detect_bank_from_url(card_url) or request.bank_key or "custom"
+        bank_name = request.custom_bank_name or get_bank_name(bank_key) or parsed.netloc
+        card_name = request.single_card_name or ""
+
+        session_id = _gen_id("v5sess")
+        now = datetime.utcnow()
+
+        session = {
+            "session_id": session_id,
+            "mode": "single_card",
+            "bank_key": bank_key,
+            "bank_name": bank_name,
+            "cards_page": "",
+            "use_playwright": request.use_playwright,
+            "max_depth": request.max_depth,
+            "current_step": 1,
+            "status": "cards_discovered",
+            "card_url_patterns": [],
+            "exclude_patterns": [],
+            "stats": {"cards_discovered": 1},
+            "created_at": now,
+            "updated_at": now,
+        }
+        await db[SESSIONS].insert_one(session)
+
+        # Auto-detect card name from URL if not provided
+        if not card_name:
+            # Try to get page title
+            try:
+                from app.services.playwright_scraper import scrape_with_playwright
+                html = await scrape_with_playwright(card_url)
+                if html:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(html, 'html.parser')
+                    title_tag = soup.find('title')
+                    if title_tag:
+                        card_name = title_tag.get_text(strip=True)
+                        # Clean up common suffixes
+                        for suffix in [' | Emirates NBD', ' - Emirates NBD', ' | FAB', ' | ADCB', ' | Mashreq']:
+                            card_name = card_name.replace(suffix, '').strip()
+            except Exception:
+                pass
+            if not card_name:
+                # Derive from URL path
+                path_parts = parsed.path.rstrip('/').split('/')
+                card_name = path_parts[-1].replace('-', ' ').title() if path_parts else "Unknown Card"
+
+        # Detect card metadata
+        meta = detect_card_metadata(card_name, card_url)
+
+        card_doc = {
+            "card_id": _gen_id("card"),
+            "session_id": session_id,
+            "bank_key": bank_key,
+            "bank_name": bank_name,
+            "card_name": card_name,
+            "card_url": card_url,
+            "card_image_url": None,
+            "card_network": meta.get("network", ""),
+            "card_tier": meta.get("tier", ""),
+            "summary_benefits": "",
+            "is_selected": False,
+            "depth1_processed": False,
+            "created_at": now,
+        }
+        await db[CARDS].insert_one(card_doc)
+
+        return {
+            "success": True,
+            "session_id": session_id,
+            "mode": "single_card",
+            "bank_name": bank_name,
+            "cards_discovered": 1,
+            "cards": [{
+                "card_id": card_doc["card_id"],
+                "card_name": card_doc["card_name"],
+                "card_url": card_doc["card_url"],
+                "card_image_url": None,
+                "card_network": card_doc["card_network"],
+                "card_tier": card_doc["card_tier"],
+                "summary_benefits": "",
+            }],
+        }
+
+    # ---- BANK-WIDE MODE ----
     bank_key = request.bank_key
     bank_name = request.custom_bank_name or ""
     cards_page = request.custom_bank_url or ""
@@ -103,6 +204,7 @@ async def create_structured_session(request: CreateStructuredSessionRequest):
 
     session = {
         "session_id": session_id,
+        "mode": "bank_wide",
         "bank_key": bank_key,
         "bank_name": bank_name,
         "cards_page": cards_page,
@@ -119,7 +221,7 @@ async def create_structured_session(request: CreateStructuredSessionRequest):
     await db[SESSIONS].insert_one(session)
 
     # ----- Depth 0: Discover cards -----
-    from app.api.routes.extraction_unified import scrape_with_playwright
+    from app.services.playwright_scraper import scrape_with_playwright
     from app.services.enhanced_web_scraper_service import enhanced_web_scraper_service
     from app.services.structured_scraper import discover_cards_structured
 
@@ -258,7 +360,7 @@ async def process_depth1(session_id: str):
 
     use_playwright = session.get("use_playwright", True)
 
-    from app.api.routes.extraction_unified import scrape_with_playwright
+    from app.services.playwright_scraper import scrape_with_playwright
     from app.services.enhanced_web_scraper_service import enhanced_web_scraper_service
     from app.services.structured_scraper import parse_card_detail_page, _clean_section_text
 
@@ -559,10 +661,18 @@ async def get_card_sections(session_id: str, card_id: str):
     # For each section, count and attach mapped depth-2 URLs
     for sec in sections:
         sec_id = sec.get("section_id", "")
+        sec_name = sec.get("section_name", "")
+        # Match by section_id OR section_name (sub-sections use name-based mapping)
         mapped_urls = await db[DISCOVERED_URLS].find(
-            {"session_id": session_id, "source_section_id": sec_id},
+            {"session_id": session_id, "$or": [
+                {"source_section_id": sec_id},
+                {"source_section_name": sec_name},
+            ]},
             {"_id": 0, "url_id": 1, "url": 1, "title": 1, "status": 1, "url_type": 1},
         ).to_list(length=50)
+        # Also check section's own stored links if no mapped URLs found
+        if not mapped_urls and sec.get("links"):
+            mapped_urls = [{"url": l["url"], "title": l.get("title", ""), "status": "pending"} for l in sec["links"]]
         sec["mapped_urls"] = mapped_urls
         sec["mapped_url_count"] = len(mapped_urls)
 
@@ -653,151 +763,234 @@ async def get_depth2_urls(session_id: str):
     return {"urls": urls, "total": len(urls)}
 
 
-# ============= STEP 4: PROCESS DEPTH 2-3 (SHARED BENEFIT PAGES) =============
+# ============= STEP 4: PROCESS DEPTH 2-3 (SCRAPE & SECTION FOR REVIEW) =============
+
+DEPTH2_SECTIONS = "v5_depth2_sections"  # Pending review, like depth 1 card_sections
 
 @router.post("/sessions/{session_id}/process-depth2")
 async def process_depth2(session_id: str, max_urls: int = 50):
     """
-    Depth 2: Process discovered URLs from depth 1.
-    Intelligent benefit sectioning with card cross-referencing.
-    Auto-continues to depth 3 for discovered deeper links.
+    Depth 2-3: Scrape discovered URLs and section them using HTML structure.
+    NO LLM — same approach as depth 1.
+    Results stored in v5_depth2_sections for user review before final storage.
+    Preserves full context chain: bank > card > d1 section > d2 url > d2 sections.
     """
     db = await get_database()
     session = await db[SESSIONS].find_one({"session_id": session_id})
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Get all discovered cards for cross-referencing
-    all_cards = await db[CARDS].find(
-        {"session_id": session_id}
-    ).to_list(length=200)
-    all_card_names = [c["card_name"] for c in all_cards]
     bank_name = session.get("bank_name", "")
+    bank_key = session.get("bank_key", "")
     use_playwright = session.get("use_playwright", True)
     session_max_depth = session.get("max_depth", 3)
 
-    from app.api.routes.extraction_unified import scrape_with_playwright
+    from app.services.playwright_scraper import scrape_with_playwright
     from app.services.enhanced_web_scraper_service import enhanced_web_scraper_service
-    from app.services.structured_scraper import parse_shared_benefit_page
-
-    ollama_client = None
-    try:
-        from app.services.ollama_client import OllamaClient
-        ollama_client = OllamaClient()
-    except Exception:
-        pass
+    from app.services.structured_scraper import _clean_section_text, _classify_section, _normalize_section_name, _is_relevant_link
 
     now = datetime.utcnow()
-    total_benefits = 0
+    total_sections = 0
     total_depth3_urls = 0
     processed_count = 0
     skipped_count = 0
+    results = []
 
     # Process depth 2 and depth 3
     for current_depth in [2, 3]:
         if current_depth > session_max_depth:
             break
 
+        # Only process APPROVED (pending) URLs — skipped ones are excluded
         urls_to_process = await db[DISCOVERED_URLS].find({
             "session_id": session_id,
             "depth": current_depth,
             "status": "pending",
         }).to_list(length=max_urls)
 
-        logger.info(f"[V5] Processing {len(urls_to_process)} URLs at depth {current_depth}")
+        logger.info(f"[V5] Depth {current_depth}: {len(urls_to_process)} URLs to process")
 
         for url_doc in urls_to_process:
             url = url_doc["url"]
             url_hash = _hash_url(url)
+            source_card_names = url_doc.get("card_names", [])
+            source_section_name = url_doc.get("source_section_name", "")
 
-            # Check if we already extracted benefits for this URL in THIS session
-            existing_session_benefits = await db[BENEFIT_SECTIONS].find(
+            # Check if already sectioned in THIS session
+            existing = await db[DEPTH2_SECTIONS].find(
                 {"session_id": session_id, "source_url": url}
             ).to_list(length=100)
 
-            if existing_session_benefits:
-                logger.info(f"[V5] Depth {current_depth}: Already have {len(existing_session_benefits)} benefits for {url[:60]} in this session")
+            if existing:
+                logger.info(f"[V5] Depth {current_depth}: Already sectioned {url[:60]}")
                 await db[DISCOVERED_URLS].update_one(
                     {"_id": url_doc["_id"]},
-                    {"$set": {"status": "completed_cached", "benefits_found": len(existing_session_benefits)}},
+                    {"$set": {"status": "completed", "sections_found": len(existing)}},
                 )
                 skipped_count += 1
-                total_benefits += len(existing_session_benefits)
+                total_sections += len(existing)
                 continue
 
-            # Scrape the page (reuse HTML if possible, but always extract benefits)
+            # Scrape the page
             html = None
+            interactive_sections = None
 
-            # Try playwright / direct scrape
+            # Try interactive scraper first (clicks expandables) — same as depth 1
             if use_playwright:
+                try:
+                    from app.services.interactive_scraper import scrape_card_page_interactive
+                    interactive_result = await scrape_card_page_interactive(url)
+                    if interactive_result.get("sections"):
+                        interactive_sections = interactive_result["sections"]
+                        expandable_count = sum(1 for s in interactive_sections if s.get("is_expandable"))
+                        sub_count = sum(len(s.get("sub_sections", [])) for s in interactive_sections)
+                        logger.info(f"[V5] Depth {current_depth}: Interactive → {len(interactive_sections)} sections "
+                                    f"({expandable_count} expandable, {sub_count} sub-sections) from {url[:60]}")
+                    else:
+                        html = interactive_result.get("full_html", "")
+                        logger.info(f"[V5] Depth {current_depth}: Interactive returned no sections, got {len(html or '')} chars HTML from {url[:60]}")
+                except Exception as e:
+                    logger.warning(f"[V5] Depth {current_depth}: Interactive scrape failed for {url[:60]}: {e}")
+
+            # Fallback: plain playwright
+            if not interactive_sections and not html:
                 try:
                     html = await scrape_with_playwright(url)
                     logger.info(f"[V5] Depth {current_depth}: Playwright scraped {len(html or '')} chars from {url[:60]}")
                 except Exception as e:
                     logger.warning(f"[V5] Playwright failed for {url[:60]}: {e}")
-            if not html:
+
+            # Fallback: direct HTTP
+            if not interactive_sections and not html:
                 try:
                     html = await enhanced_web_scraper_service.scrape_url(url)
-                    logger.info(f"[V5] Depth {current_depth}: Fallback scraped {len(html or '')} chars from {url[:60]}")
                 except Exception as e:
-                    logger.error(f"[V5] Failed to scrape {url[:60]}: {e}")
+                    logger.error(f"[V5] All scraping failed for {url[:60]}: {e}")
                     await db[DISCOVERED_URLS].update_one(
                         {"_id": url_doc["_id"]},
                         {"$set": {"status": "failed", "error": str(e)}},
                     )
                     continue
 
-            if not html or len(html) < 100:
-                logger.warning(f"[V5] Empty HTML for {url[:60]}")
+            if not interactive_sections and (not html or len(html) < 100):
                 await db[DISCOVERED_URLS].update_one(
                     {"_id": url_doc["_id"]},
                     {"$set": {"status": "failed", "error": "Empty HTML"}},
                 )
                 continue
 
-            # Parse benefits
-            try:
-                benefit_sections, deeper_links = await parse_shared_benefit_page(
-                    html, url, all_card_names, bank_name, ollama_client,
-                )
-                logger.info(f"[V5] Depth {current_depth}: Parsed {len(benefit_sections)} benefits from {url[:60]}")
-            except Exception as e:
-                logger.error(f"[V5] parse_shared_benefit_page failed for {url[:60]}: {e}")
-                import traceback
-                traceback.print_exc()
-                await db[DISCOVERED_URLS].update_one(
-                    {"_id": url_doc["_id"]},
-                    {"$set": {"status": "failed", "error": f"Parse error: {str(e)}"}},
-                )
-                continue
+            # ---- SECTION THE CONTENT (HTML-only, no LLM) ----
+            page_sections = []
 
-            # Store benefit sections
-            for benefit in benefit_sections:
-                benefit_doc = {
-                    "benefit_id": _gen_id("ben"),
+            if interactive_sections:
+                # Convert interactive scraper sections
+                for isec in interactive_sections:
+                    heading = isec.get("heading", "")
+                    content = _clean_section_text(isec.get("content", ""))
+                    sec_links = isec.get("links", [])
+                    relevant_links = [l for l in sec_links if _is_relevant_link(l.get("url", ""), l.get("title", ""))]
+
+                    if content and len(content) > 20:
+                        page_sections.append({
+                            "section_name": _normalize_section_name(heading),
+                            "section_type": _classify_section(heading, content),
+                            "content": content,
+                            "heading_text": heading,
+                            "links": relevant_links,
+                            "is_expandable": isec.get("is_expandable", False),
+                        })
+
+                    # Sub-sections from expandable items
+                    for sub in isec.get("sub_sections", []):
+                        sub_content = _clean_section_text(sub.get("content", ""))
+                        sub_links = sub.get("links", [])
+                        relevant_sub_links = [l for l in sub_links if _is_relevant_link(l.get("url", ""), l.get("title", ""))]
+                        sub_name = _normalize_section_name(f"{heading} - {sub.get('title', '')}")
+
+                        if sub_content and len(sub_content) > 20:
+                            page_sections.append({
+                                "section_name": sub_name,
+                                "section_type": _classify_section(sub_name, sub_content),
+                                "content": sub_content,
+                                "heading_text": f"{heading} → {sub.get('title', '')}",
+                                "links": relevant_sub_links,
+                                "parent_section": _normalize_section_name(heading),
+                            })
+            else:
+                # HTML-only sectioning (same as depth 1 fallback)
+                try:
+                    from app.services.structured_scraper import parse_card_detail_page
+                    html_sections, html_links = await parse_card_detail_page(html, url, "", None)
+                    for sec in html_sections:
+                        content = _clean_section_text(sec.get("content", ""))
+                        if content and len(content) > 20:
+                            page_sections.append(sec)
+                except Exception as e:
+                    logger.error(f"[V5] HTML sectioning failed for {url[:60]}: {e}")
+
+            if not page_sections:
+                # Last resort: store entire page text as one section
+                if html:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(html, 'html.parser')
+                    for tag in soup.find_all(['script', 'style', 'nav', 'footer', 'svg', 'iframe']):
+                        tag.decompose()
+                    text = _clean_section_text(soup.get_text(separator='\n', strip=True)[:8000])
+                    if text:
+                        page_sections.append({
+                            "section_name": "page_content",
+                            "section_type": "general",
+                            "content": text,
+                            "heading_text": url_doc.get("title", url),
+                            "links": [],
+                        })
+
+            # Store sections for review (NOT final benefit storage)
+            section_docs = []
+            url_sections_links = []
+            for sec in page_sections:
+                sec_id = _gen_id("d2s")
+                sec_links = sec.get("links", [])
+                section_docs.append({
+                    "section_id": sec_id,
                     "session_id": session_id,
                     "source_url": url,
+                    "source_url_id": url_doc.get("url_id", ""),
                     "source_depth": current_depth,
-                    "source_card_ids": url_doc.get("card_ids", []),
-                    "source_card_names": url_doc.get("card_names", []),
-                    "bank_key": session.get("bank_key", ""),
+                    # Full context chain
+                    "bank_key": bank_key,
                     "bank_name": bank_name,
-                    "benefit_name": benefit.get("benefit_name", ""),
-                    "benefit_text": benefit.get("benefit_text", ""),
-                    "benefit_category": benefit.get("benefit_category", "general"),
-                    "eligible_card_names": benefit.get("eligible_card_names", []),
-                    "conditions": benefit.get("conditions", []),
-                    "validity": benefit.get("validity", ""),
+                    "source_card_names": source_card_names,
+                    "source_d1_section": source_section_name,
+                    # Section data
+                    "section_name": sec["section_name"],
+                    "section_type": sec.get("section_type", "general"),
+                    "content": sec["content"],
+                    "heading_text": sec.get("heading_text", ""),
+                    "is_expandable": sec.get("is_expandable", False),
+                    "parent_section": sec.get("parent_section", ""),
+                    "links": sec_links,
+                    "link_count": len(sec_links),
+                    # Review state
+                    "is_approved": True,
+                    "is_stored": False,  # Not yet committed to final storage
                     "created_at": now,
-                }
-                await db[BENEFIT_SECTIONS].insert_one(benefit_doc)
-            total_benefits += len(benefit_sections)
+                })
+                url_sections_links.extend(sec_links)
 
-            # Store deeper links for next depth (auto up to depth 3)
+            if section_docs:
+                await db[DEPTH2_SECTIONS].insert_many(section_docs)
+            total_sections += len(section_docs)
+
+            # Discover depth 3+ URLs from section links
             next_depth = current_depth + 1
             if next_depth <= session_max_depth:
-                for link in deeper_links:
+                seen_link_hashes = set()
+                for link in url_sections_links:
                     link_hash = _hash_url(link["url"])
+                    if link_hash in seen_link_hashes:
+                        continue
+                    seen_link_hashes.add(link_hash)
                     existing_link = await db[DISCOVERED_URLS].find_one({
                         "session_id": session_id, "url_hash": link_hash,
                     })
@@ -805,46 +998,41 @@ async def process_depth2(session_id: str, max_urls: int = 50):
                         await db[DISCOVERED_URLS].insert_one({
                             "url_id": _gen_id("url"),
                             "session_id": session_id,
-                            "source_card_id": url_doc.get("source_card_id", ""),
-                            "source_card_name": url_doc.get("source_card_name", ""),
+                            "source_card_name": ', '.join(source_card_names[:3]),
+                            "source_section_name": url_doc.get("title", ""),
                             "url": link["url"],
                             "url_hash": link_hash,
                             "title": link.get("title", ""),
-                            "url_type": link.get("url_type", "web"),
                             "depth": next_depth,
                             "status": "pending" if next_depth <= 3 else "needs_approval",
                             "card_ids": url_doc.get("card_ids", []),
-                            "card_names": url_doc.get("card_names", []),
+                            "card_names": source_card_names,
                             "parent_url": url,
                             "created_at": now,
                         })
                         total_depth3_urls += 1
 
-            # Mark as scraped
-            await db[SCRAPED_URLS].update_one(
-                {"url_hash": url_hash},
-                {"$set": {
-                    "url": url, "url_hash": url_hash,
-                    "session_id": session_id, "depth": current_depth,
-                    "scraped_at": now, "content_type": "shared_benefits",
-                    "benefits_extracted": len(benefit_sections),
-                }},
-                upsert=True,
-            )
-
+            # Mark URL as processed
             await db[DISCOVERED_URLS].update_one(
                 {"_id": url_doc["_id"]},
-                {"$set": {"status": "completed", "benefits_found": len(benefit_sections)}},
+                {"$set": {"status": "completed", "sections_found": len(section_docs)}},
             )
 
             processed_count += 1
-            logger.info(f"[V5] Depth {current_depth}: {url[:60]} → {len(benefit_sections)} benefits")
+            results.append({
+                "url": url,
+                "title": url_doc.get("title", ""),
+                "depth": current_depth,
+                "sections": len(section_docs),
+                "links_found": len(url_sections_links),
+                "source_cards": source_card_names[:3],
+            })
 
     await db[SESSIONS].update_one(
         {"session_id": session_id},
         {"$set": {
-            "current_step": 4, "status": "depth2_complete",
-            "stats.benefits_extracted": total_benefits,
+            "current_step": 4, "status": "depth2_sectioned",
+            "stats.d2_sections": total_sections,
             "stats.urls_processed": processed_count,
             "stats.urls_cached": skipped_count,
             "stats.depth3_urls_discovered": total_depth3_urls,
@@ -856,9 +1044,349 @@ async def process_depth2(session_id: str, max_urls: int = 50):
         "success": True,
         "urls_processed": processed_count,
         "urls_cached": skipped_count,
-        "benefits_extracted": total_benefits,
+        "total_sections": total_sections,
         "depth3_urls_discovered": total_depth3_urls,
+        "results": results,
     }
+
+
+# ============= STEP 4b: REVIEW DEPTH 2-3 SECTIONS =============
+
+@router.get("/sessions/{session_id}/depth2-sections")
+async def get_depth2_sections(session_id: str, source_url: str = None):
+    """Get depth 2-3 sections for review, optionally filtered by source URL."""
+    db = await get_database()
+    query = {"session_id": session_id}
+    if source_url:
+        query["source_url"] = source_url
+    sections = await db[DEPTH2_SECTIONS].find(query, {"_id": 0}).to_list(length=500)
+
+    # Group by source URL
+    by_url = {}
+    for sec in sections:
+        url = sec["source_url"]
+        if url not in by_url:
+            by_url[url] = {
+                "source_url": url,
+                "source_depth": sec.get("source_depth", 2),
+                "source_card_names": sec.get("source_card_names", []),
+                "source_d1_section": sec.get("source_d1_section", ""),
+                "sections": [],
+            }
+        by_url[url]["sections"].append(sec)
+
+    return {
+        "urls": list(by_url.values()),
+        "total_urls": len(by_url),
+        "total_sections": len(sections),
+    }
+
+
+@router.delete("/sessions/{session_id}/depth2-sections/{section_id}")
+async def delete_depth2_section(session_id: str, section_id: str):
+    """Delete a depth 2-3 section (reject it from final storage)."""
+    db = await get_database()
+    section = await db[DEPTH2_SECTIONS].find_one({
+        "session_id": session_id, "section_id": section_id,
+    })
+    if not section:
+        raise HTTPException(status_code=404, detail="Section not found")
+
+    await db[DEPTH2_SECTIONS].delete_one({"session_id": session_id, "section_id": section_id})
+    logger.info(f"[V5] Deleted depth2 section {section_id}: {section.get('section_name', '')}")
+    return {"success": True, "section_name": section.get("section_name", "")}
+
+
+@router.post("/sessions/{session_id}/depth2-sections/{section_id}/toggle")
+async def toggle_depth2_section(session_id: str, section_id: str):
+    """Toggle approval of a depth 2-3 section."""
+    db = await get_database()
+    section = await db[DEPTH2_SECTIONS].find_one({
+        "session_id": session_id, "section_id": section_id,
+    })
+    if not section:
+        raise HTTPException(status_code=404, detail="Section not found")
+
+    new_status = not section.get("is_approved", True)
+    await db[DEPTH2_SECTIONS].update_one(
+        {"session_id": session_id, "section_id": section_id},
+        {"$set": {"is_approved": new_status}},
+    )
+    return {"success": True, "is_approved": new_status}
+
+
+@router.post("/sessions/{session_id}/store-approved")
+async def store_approved_sections(session_id: str):
+    """
+    Final storage: Store ALL approved data from this V5 session.
+    
+    1. Approved depth 1 sections (card page content) → v5_benefit_sections
+    2. Approved depth 2-3 sections → v5_benefit_sections
+    3. Everything → approved_raw_data (for DataStore & Vectorization tab)
+    
+    Each source in approved_raw_data includes hierarchical context prefix:
+      Bank > Card > Depth 1 Section > URL > Depth 2 Section
+    This context is embedded WITH the content for vectorization.
+    """
+    import uuid
+    db = await get_database()
+    session = await db[SESSIONS].find_one({"session_id": session_id})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    bank_name = session.get("bank_name", "")
+    bank_key = session.get("bank_key", "")
+    now = datetime.utcnow()
+    stored_count = 0
+    
+    # ---- 1. Store approved depth 2-3 sections to v5_benefit_sections ----
+    approved_d2 = await db[DEPTH2_SECTIONS].find({
+        "session_id": session_id,
+        "is_approved": True,
+        "is_stored": {"$ne": True},
+    }).to_list(length=1000)
+
+    for sec in approved_d2:
+        benefit_doc = {
+            "benefit_id": _gen_id("ben"),
+            "session_id": session_id,
+            "bank_key": sec.get("bank_key", bank_key),
+            "bank_name": sec.get("bank_name", bank_name),
+            "source_card_names": sec.get("source_card_names", []),
+            "source_d1_section": sec.get("source_d1_section", ""),
+            "source_url": sec.get("source_url", ""),
+            "source_depth": sec.get("source_depth", 2),
+            "section_name": sec.get("section_name", ""),
+            "section_type": sec.get("section_type", "general"),
+            "content": sec.get("content", ""),
+            "heading_text": sec.get("heading_text", ""),
+            "parent_section": sec.get("parent_section", ""),
+            "links": sec.get("links", []),
+            "link_count": sec.get("link_count", 0),
+            "stored_at": now,
+        }
+        await db[BENEFIT_SECTIONS].insert_one(benefit_doc)
+        stored_count += 1
+        await db[DEPTH2_SECTIONS].update_one(
+            {"_id": sec["_id"]},
+            {"$set": {"is_stored": True, "stored_at": now}},
+        )
+
+    # ---- 2. Gather ALL approved data for approved_raw_data ----
+    # Get all cards in session
+    all_cards = await db[CARDS].find({"session_id": session_id}).to_list(length=100)
+    logger.info(f"[V5] Building approved_raw_data for {len(all_cards)} cards, {stored_count} d2 sections stored")
+
+    # For each card, build a record with hierarchical sources
+    records_created = []
+
+    for card in all_cards:
+        card_id = card.get("card_id", "")
+        card_name = card.get("card_name", "Unknown Card")
+        card_url = card.get("card_url", "")
+        card_network = card.get("card_network", "")
+        card_tier = card.get("card_tier", "")
+
+        # Get depth 1 sections for this card (approved only)
+        d1_sections = await db[CARD_SECTIONS].find({
+            "session_id": session_id,
+            "card_id": card_id,
+            "is_approved": {"$ne": False},
+        }, {"_id": 0}).to_list(length=100)
+
+        # Get depth 2-3 benefit sections linked to this card
+        d2_benefits = await db[BENEFIT_SECTIONS].find({
+            "session_id": session_id,
+            "$or": [
+                {"source_card_names": card_name},
+                {"source_card_names": {"$size": 0}},
+                {"source_card_names": {"$exists": False}},
+            ],
+        }, {"_id": 0}).to_list(length=500)
+
+        # Also get depth 2-3 sections from DEPTH2_SECTIONS (approved + stored)
+        d2_sections = await db[DEPTH2_SECTIONS].find({
+            "session_id": session_id,
+            "is_approved": True,
+            "is_stored": True,
+            "$or": [
+                {"source_card_names": card_name},
+                {"source_card_names": {"$size": 0}},
+                {"source_card_names": {"$exists": False}},
+            ],
+        }, {"_id": 0}).to_list(length=500)
+
+        logger.info(f"[V5] Card '{card_name}': {len(d1_sections)} d1 sections, "
+                     f"{len(d2_benefits)} d2 benefits, {len(d2_sections)} d2 sections")
+
+        if not d1_sections and not d2_benefits and not d2_sections:
+            continue
+
+        # Build sources list with hierarchical context
+        sources = []
+        total_chars = 0
+
+        # Depth 1 sources
+        for sec in d1_sections:
+            context_prefix = _build_context_prefix(
+                bank_name=bank_name,
+                card_name=card_name,
+                depth=1,
+                section_name=sec.get("section_name", ""),
+                section_type=sec.get("section_type", "general"),
+                parent_section=sec.get("parent_section", ""),
+                source_url=card_url,
+            )
+            content = sec.get("content", "")
+            contextual_content = f"{context_prefix}\n\n{content}"
+
+            sources.append({
+                "url": card_url,
+                "title": sec.get("heading_text", sec.get("section_name", "")),
+                "source_type": "web",
+                "depth": 1,
+                "section_name": sec.get("section_name", ""),
+                "section_type": sec.get("section_type", "general"),
+                "parent_section": sec.get("parent_section", ""),
+                "is_expandable": sec.get("is_expandable", False),
+                "raw_content": content,
+                "cleaned_content": contextual_content,
+                "cleaned_content_length": len(contextual_content),
+                "context_prefix": context_prefix,
+            })
+            total_chars += len(contextual_content)
+
+        # Depth 2-3 sources (use d2_sections which have full context)
+        seen_d2_urls = set()
+        for sec in (d2_sections or d2_benefits):
+            src_url = sec.get("source_url", "")
+            sec_name = sec.get("section_name", "")
+            dedup_key = f"{src_url}|{sec_name}"
+            if dedup_key in seen_d2_urls:
+                continue
+            seen_d2_urls.add(dedup_key)
+
+            context_prefix = _build_context_prefix(
+                bank_name=bank_name,
+                card_name=card_name,
+                depth=sec.get("source_depth", 2),
+                section_name=sec_name,
+                section_type=sec.get("section_type", "general"),
+                parent_section=sec.get("parent_section", ""),
+                d1_section=sec.get("source_d1_section", ""),
+                source_url=src_url,
+            )
+            content = sec.get("content", sec.get("benefit_text", ""))
+            contextual_content = f"{context_prefix}\n\n{content}"
+
+            sources.append({
+                "url": src_url,
+                "title": sec.get("heading_text", sec_name),
+                "source_type": "web",
+                "depth": sec.get("source_depth", 2),
+                "section_name": sec_name,
+                "section_type": sec.get("section_type", "general"),
+                "parent_section": sec.get("parent_section", ""),
+                "d1_section": sec.get("source_d1_section", ""),
+                "raw_content": content,
+                "cleaned_content": contextual_content,
+                "cleaned_content_length": len(contextual_content),
+                "context_prefix": context_prefix,
+            })
+            total_chars += len(contextual_content)
+
+        if not sources:
+            continue
+
+        # Create approved_raw_data record
+        saved_id = str(uuid.uuid4())
+        raw_record = {
+            "saved_id": saved_id,
+            "session_id": session_id,
+            "extraction_version": "v5",
+            "primary_url": card_url,
+            "primary_title": card_name,
+            "detected_card_name": card_name,
+            "detected_bank": bank_name,
+            "bank_key": bank_key,
+            "card_network": card_network,
+            "card_tier": card_tier,
+            "sources": sources,
+            "total_sources": len(sources),
+            "total_content_length": total_chars,
+            "stored_at": now,
+            "status": "pending_processing",
+            "vector_indexed": False,
+        }
+
+        await db.approved_raw_data.insert_one(raw_record)
+        records_created.append({
+            "saved_id": saved_id,
+            "card_name": card_name,
+            "sources": len(sources),
+            "chars": total_chars,
+        })
+
+    # Update session
+    await db[SESSIONS].update_one(
+        {"session_id": session_id},
+        {"$set": {
+            "status": "stored",
+            "stats.benefits_stored": stored_count,
+            "stats.raw_records_created": len(records_created),
+            "updated_at": now,
+        }},
+    )
+
+    logger.info(f"[V5] Stored {stored_count} benefit sections + {len(records_created)} raw records for session {session_id}")
+
+    return {
+        "success": True,
+        "stored": stored_count,
+        "raw_records": records_created,
+        "total_raw_records": len(records_created),
+    }
+
+
+def _build_context_prefix(
+    bank_name: str = "",
+    card_name: str = "",
+    depth: int = 1,
+    section_name: str = "",
+    section_type: str = "",
+    parent_section: str = "",
+    d1_section: str = "",
+    source_url: str = "",
+) -> str:
+    """
+    Build a hierarchical context prefix for vectorization.
+    This prefix is prepended to content so the vector embedding captures
+    the full context chain.
+    
+    Example output:
+      [Bank: Emirates NBD]
+      [Card: Mastercard Platinum Credit Card]
+      [Depth 1 Section: More advantages exclusively for you]
+      [Depth 2 URL: https://www.emiratesnbd.com/en/offers/golf]
+      [Section: Golf Privileges > Participating Courses]
+      [Type: golf]
+    """
+    parts = []
+    if bank_name:
+        parts.append(f"[Bank: {bank_name}]")
+    if card_name:
+        parts.append(f"[Card: {card_name}]")
+    if d1_section:
+        parts.append(f"[Depth 1 Section: {d1_section}]")
+    if depth >= 2 and source_url:
+        parts.append(f"[Depth {depth} URL: {source_url}]")
+    if parent_section:
+        parts.append(f"[Section: {parent_section} > {section_name}]")
+    elif section_name:
+        parts.append(f"[Section: {section_name}]")
+    if section_type and section_type != "general":
+        parts.append(f"[Type: {section_type}]")
+    return '\n'.join(parts)
 
 
 # ============= VIEW BENEFIT SECTIONS =============
@@ -962,3 +1490,162 @@ async def delete_session(session_id: str):
         await db[coll].delete_many({"session_id": session_id})
     # Don't delete SCRAPED_URLS as they're shared across sessions
     return {"success": True}
+
+
+# ============= SYSTEM CLEANUP =============
+
+@router.post("/system/cleanup")
+async def system_cleanup(
+    clean_v5: bool = True,
+    clean_v4: bool = True,
+    clean_v2: bool = True,
+    clean_approved_raw: bool = True,
+    clean_vectors: bool = True,
+    clean_pipelines: bool = True,
+    clean_redis: bool = True,
+):
+    """
+    Full system cleanup. Drops all data collections, resets ChromaDB, flushes Redis.
+    Returns a report of what was deleted.
+    """
+    db = await get_database()
+    report = {}
+
+    # --- V5 collections ---
+    if clean_v5:
+        v5_collections = [
+            "v5_sessions", "v5_cards", "v5_card_sections",
+            "v5_benefit_sections", "v5_scraped_urls",
+            "v5_discovered_urls", "v5_depth2_sections",
+        ]
+        for coll in v5_collections:
+            count = await db[coll].count_documents({})
+            if count > 0:
+                await db[coll].delete_many({})
+            report[coll] = count
+
+    # --- V4 collections ---
+    if clean_v4:
+        v4_collections = [
+            "v4_sessions", "session_cards", "v4_sources",
+            "v4_discovered_urls",
+        ]
+        for coll in v4_collections:
+            try:
+                count = await db[coll].count_documents({})
+                if count > 0:
+                    await db[coll].delete_many({})
+                report[coll] = count
+            except Exception:
+                report[coll] = 0
+
+    # --- V2 collections ---
+    if clean_v2:
+        v2_collections = [
+            "extraction_sessions", "raw_extractions", "extractions",
+        ]
+        for coll in v2_collections:
+            try:
+                count = await db[coll].count_documents({})
+                if count > 0:
+                    await db[coll].delete_many({})
+                report[coll] = count
+            except Exception:
+                report[coll] = 0
+
+    # --- Approved raw data (shared between V4/V5 and DataStore) ---
+    if clean_approved_raw:
+        count = await db.approved_raw_data.count_documents({})
+        if count > 0:
+            await db.approved_raw_data.delete_many({})
+        report["approved_raw_data"] = count
+
+    # --- Pipeline results ---
+    if clean_pipelines:
+        pipeline_collections = [
+            "pipeline_results", "aggregated_pipeline_results",
+            "approved_benefits", "approved_intelligence",
+        ]
+        for coll in pipeline_collections:
+            try:
+                count = await db[coll].count_documents({})
+                if count > 0:
+                    await db[coll].delete_many({})
+                report[coll] = count
+            except Exception:
+                report[coll] = 0
+
+    # --- ChromaDB vectors ---
+    if clean_vectors:
+        from app.services.vector_store import vector_store
+        if vector_store.available:
+            vec_count = vector_store._collection.count()
+            vector_store.reset()
+            report["chromadb_vectors"] = vec_count
+        else:
+            report["chromadb_vectors"] = "unavailable"
+
+    # --- Redis cache ---
+    if clean_redis:
+        try:
+            from app.core.redis_client import redis_client
+            if redis_client and redis_client._pool:
+                flushed = await redis_client.flush_all()
+                report["redis"] = "flushed" if flushed else "failed"
+            else:
+                report["redis"] = "not connected"
+        except Exception as e:
+            report["redis"] = f"error: {str(e)}"
+
+    total_docs = sum(v for v in report.values() if isinstance(v, int))
+    logger.info(f"[V5] System cleanup: {total_docs} documents deleted, report: {report}")
+
+    return {
+        "success": True,
+        "total_documents_deleted": total_docs,
+        "report": report,
+    }
+
+
+@router.get("/system/stats")
+async def system_stats():
+    """Get counts for all collections — used by cleanup UI to show what exists."""
+    db = await get_database()
+    stats = {}
+
+    all_collections = [
+        "v5_sessions", "v5_cards", "v5_card_sections", "v5_benefit_sections",
+        "v5_scraped_urls", "v5_discovered_urls", "v5_depth2_sections",
+        "v4_sessions", "session_cards",
+        "extraction_sessions", "raw_extractions",
+        "approved_raw_data",
+        "pipeline_results", "aggregated_pipeline_results",
+        "approved_benefits", "approved_intelligence",
+    ]
+
+    for coll in all_collections:
+        try:
+            stats[coll] = await db[coll].count_documents({})
+        except Exception:
+            stats[coll] = 0
+
+    # ChromaDB
+    from app.services.vector_store import vector_store
+    if vector_store.available:
+        stats["chromadb_vectors"] = vector_store._collection.count()
+    else:
+        stats["chromadb_vectors"] = 0
+
+    # Redis
+    try:
+        from app.core.redis_client import redis_client
+        if redis_client and redis_client._pool:
+            info = await redis_client.info()
+            stats["redis_keys"] = info.get("db0", {}).get("keys", 0) if isinstance(info.get("db0"), dict) else 0
+        else:
+            stats["redis_keys"] = 0
+    except Exception:
+        stats["redis_keys"] = 0
+
+    total = sum(v for v in stats.values() if isinstance(v, int))
+    return {"stats": stats, "total_documents": total}

@@ -113,13 +113,16 @@ def chunk_content(
     page_type = detect_page_type(source_url, source_title)
     bank_name = get_bank_name(bank_key) if bank_key else ""
 
+    # ID seed: url + title ensures uniqueness across sections from the same URL
+    id_seed = f"{source_url}|{source_title}"
+
     for para in paragraphs:
         if len(buffer) + len(para) + 2 <= max_chunk_size:
             buffer = (buffer + "\n\n" + para).strip() if buffer else para
         else:
             # Flush buffer as a chunk
             if len(buffer) >= min_chunk_size:
-                chunk_id = hashlib.md5((source_url + str(len(chunks)) + buffer[:100]).encode()).hexdigest()[:16]
+                chunk_id = hashlib.md5((id_seed + str(len(chunks)) + buffer[:100]).encode()).hexdigest()[:16]
                 chunks.append({
                     "id": chunk_id,
                     "text": buffer,
@@ -140,7 +143,7 @@ def chunk_content(
                 for i in range(0, len(para), max_chunk_size - overlap):
                     segment = para[i : i + max_chunk_size]
                     if len(segment) >= min_chunk_size:
-                        cid = hashlib.md5((source_url + str(len(chunks)) + segment[:100]).encode()).hexdigest()[:16]
+                        cid = hashlib.md5((id_seed + str(len(chunks)) + segment[:100]).encode()).hexdigest()[:16]
                         chunks.append({
                             "id": cid,
                             "text": segment,
@@ -161,7 +164,7 @@ def chunk_content(
 
     # Flush remaining buffer
     if len(buffer) >= min_chunk_size:
-        chunk_id = hashlib.md5((source_url + str(len(chunks)) + buffer[:100]).encode()).hexdigest()[:16]
+        chunk_id = hashlib.md5((id_seed + str(len(chunks)) + buffer[:100]).encode()).hexdigest()[:16]
         chunks.append({
             "id": chunk_id,
             "text": buffer,
@@ -250,13 +253,25 @@ class VectorStoreService:
     # Ingest
     # ------------------------------------------------------------------
 
+    def clear_card_vectors(self, card_name: str) -> int:
+        """Delete all vectors for a specific card. Returns count deleted."""
+        if not self.available or not card_name:
+            return 0
+        try:
+            old = self._collection.get(where={"card_name": card_name}, limit=10000)
+            old_ids = old.get("ids", [])
+            if old_ids:
+                self._collection.delete(ids=old_ids)
+                logger.info(f"[Vector] Cleared {len(old_ids)} old chunks for '{card_name}'")
+            return len(old_ids)
+        except Exception as e:
+            logger.warning(f"[Vector] Failed to clear old chunks: {e}")
+            return 0
+
     async def index_approved_data(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Chunk and embed all sources from an approved raw-data record,
         then upsert into the vector store.
-
-        Uses per-source card_names when available (bank-wide crawls),
-        falls back to the record-level card_name.
 
         Args:
             raw_data: The approved_raw_data MongoDB document.
@@ -328,29 +343,41 @@ class VectorStoreService:
         batch_size = 64
         total_embedded = 0
 
+        logger.info(f"[Vector] Starting embedding of {len(all_chunks)} chunks for '{record_card_name}'")
+
         for i in range(0, len(all_chunks), batch_size):
             batch = all_chunks[i : i + batch_size]
             texts = [c["text"] for c in batch]
             try:
                 embeddings = await embed_texts(texts)
             except Exception as exc:
-                logger.error(f"Embedding batch {i} failed: {exc}")
+                logger.error(f"[Vector] Embedding batch {i} FAILED: {exc}")
+                logger.error(f"[Vector] Is Ollama running? Check: curl http://localhost:11434/api/tags")
                 continue
 
-            self._collection.upsert(
-                ids=[c["id"] for c in batch],
-                documents=texts,
-                embeddings=embeddings,
-                metadatas=[c["metadata"] for c in batch],
-            )
-            total_embedded += len(batch)
+            try:
+                self._collection.upsert(
+                    ids=[c["id"] for c in batch],
+                    documents=texts,
+                    embeddings=embeddings,
+                    metadatas=[c["metadata"] for c in batch],
+                )
+                total_embedded += len(batch)
+            except Exception as exc:
+                logger.error(f"[Vector] ChromaDB upsert batch {i} FAILED: {exc}")
 
-        logger.info(f"Indexed {total_embedded} chunks for card={record_card_name}")
+        # Verify persistence
+        final_count = self._collection.count()
+        logger.info(f"[Vector] Indexed {total_embedded}/{len(all_chunks)} chunks for card='{record_card_name}', collection now has {final_count} total docs")
+
+        if total_embedded == 0 and len(all_chunks) > 0:
+            logger.error("[Vector] WARNING: 0 chunks embedded! Likely cause: Ollama not running or embedding model not pulled. Run: ollama pull nomic-embed-text")
+
         return {
             "chunks": total_embedded,
             "card_name": record_card_name,
             "bank_key": bank_key,
-            "total_docs": self._collection.count(),
+            "total_docs": final_count,
         }
 
     # ------------------------------------------------------------------

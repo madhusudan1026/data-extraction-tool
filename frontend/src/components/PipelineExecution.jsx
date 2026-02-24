@@ -495,7 +495,11 @@ export default function PipelineExecution() {
       )}
 
       {/* ============= STEP 3: RESULTS ============= */}
-      {step === 3 && pipelineResults && (
+      {step === 3 && pipelineResults && (() => {
+        // pipeline_results may be a dict (keyed by name) or array — normalize to array
+        const prRaw = pipelineResults.pipeline_results || {};
+        const pipelineResultsList = Array.isArray(prRaw) ? prRaw : Object.values(prRaw);
+        return (
         <div className="space-y-4">
           {/* Card context */}
           <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 flex items-center gap-3">
@@ -511,13 +515,13 @@ export default function PipelineExecution() {
             <h3 className="font-bold text-green-800 flex items-center gap-2"><CheckCircle size={20} /> Pipeline Execution Complete</h3>
             <div className="grid grid-cols-3 gap-3 mt-3 text-center">
               <div><div className="text-xl font-bold text-green-700">{pipelineResults.total_benefits || 0}</div><div className="text-xs text-gray-500">Benefits Found</div></div>
-              <div><div className="text-xl font-bold text-blue-700">{pipelineResults.pipelines_run || 0}</div><div className="text-xs text-gray-500">Pipelines Run</div></div>
+              <div><div className="text-xl font-bold text-blue-700">{pipelineResults.pipelines_run?.length || pipelineResults.pipelines_run || 0}</div><div className="text-xs text-gray-500">Pipelines Run</div></div>
               <div><div className="text-xl font-bold text-purple-700">{((pipelineResults.overall_confidence || 0) * 100).toFixed(0)}%</div><div className="text-xs text-gray-500">Confidence</div></div>
             </div>
           </div>
 
           {/* Per-pipeline results */}
-          {pipelineResults.pipeline_results?.map((pr, idx) => {
+          {pipelineResultsList.map((pr, idx) => {
             const isExp = expandedResults.has(idx);
             const benefits = pr.benefits || [];
             return (
@@ -525,11 +529,12 @@ export default function PipelineExecution() {
                 <div className="p-3 bg-gray-50 cursor-pointer flex items-center gap-2 hover:bg-gray-100"
                   onClick={() => toggle(expandedResults, setExpandedResults, idx)}>
                   <ChevronRight size={16} className={`transition-transform ${isExp ? 'rotate-90' : ''}`} />
-                  <span className="text-lg">{pr.icon || '📋'}</span>
+                  <span className="text-lg">{pr.icon || CATEGORY_ICONS[pr.benefit_type] || '📋'}</span>
                   <span className="font-medium text-gray-700">{(pr.pipeline_name || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
                   <span className={`ml-auto px-2 py-0.5 text-xs rounded-full ${benefits.length > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                     {benefits.length} benefits
                   </span>
+                  {pr.statistics && <span className="text-xs text-gray-400">{pr.statistics.high_confidence || 0} high conf</span>}
                 </div>
                 {isExp && benefits.length > 0 && (
                   <div className="divide-y max-h-80 overflow-y-auto">
@@ -555,9 +560,18 @@ export default function PipelineExecution() {
                     ))}
                   </div>
                 )}
+                {isExp && benefits.length === 0 && (
+                  <div className="p-3 text-sm text-gray-400 italic">No benefits extracted by this pipeline.</div>
+                )}
               </div>
             );
           })}
+
+          {pipelineResultsList.length === 0 && (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm">
+              No pipeline results returned. Check the backend logs for errors.
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex gap-3">
@@ -571,7 +585,8 @@ export default function PipelineExecution() {
             </button>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

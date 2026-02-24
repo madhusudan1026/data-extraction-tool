@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { extractionAPIv2 } from '../services/api';
 import { Loader2, Trash2, Eye, RefreshCw, Database, FileText, Globe, File, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+
+const API_V2 = 'http://localhost:8000/api/v2/extraction';
 
 function ExtractionsList() {
   const [extractions, setExtractions] = useState([]);
@@ -13,19 +14,19 @@ function ExtractionsList() {
     setLoading(true);
     try {
       if (viewMode === 'raw') {
-        // Load raw extractions
-        const response = await extractionAPIv2.listRawExtractions({ limit: 20, skip: (page - 1) * 20 });
-        setExtractions(response.extractions || []);
-        setTotalPages(Math.ceil((response.total || 0) / 20) || 1);
+        const res = await fetch(`${API_V2}/raw-extractions?limit=20&skip=${(page - 1) * 20}`);
+        const data = await res.json();
+        setExtractions(data.extractions || []);
+        setTotalPages(Math.ceil((data.total || 0) / 20) || 1);
       } else {
-        // Load legacy extractions
-        const response = await extractionAPIv2.listExtractions({ page, limit: 10 });
-        if (Array.isArray(response)) {
-          setExtractions(response);
+        const res = await fetch(`${API_V2}?page=${page}&limit=10`);
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setExtractions(data);
           setTotalPages(1);
         } else {
-          setExtractions(response.data || response.results || []);
-          setTotalPages(response.pagination?.pages || 1);
+          setExtractions(data.data || data.results || []);
+          setTotalPages(data.pagination?.pages || 1);
         }
       }
     } catch (error) {
@@ -42,9 +43,8 @@ function ExtractionsList() {
 
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to delete this extraction?')) return;
-
     try {
-      await extractionAPIv2.deleteExtraction(id);
+      await fetch(`${API_V2}/${id}`, { method: 'DELETE' });
       loadExtractions();
     } catch (error) {
       console.error('Failed to delete:', error);

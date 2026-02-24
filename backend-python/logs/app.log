@@ -1,33 +1,27 @@
-2026-02-22 22:10:08 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
-2026-02-22 22:10:08 | INFO     | app.services.enhanced_llm_service:__init__:45 - EnhancedLLMService initialized: base_url=http://localhost:11434, model=phi
-2026-02-22 22:10:08 | WARNING  | app.api.routes.batch:<module>:22 - batch_service unavailable (ExtractionJob model removed). Batch endpoints disabled.
-2026-02-22 22:10:08 | INFO     | app.main:lifespan:30 - Starting application...
-2026-02-22 22:10:08 | INFO     | app.core.database:connect:27 - Connecting to MongoDB at mongodb://localhost:27017
-2026-02-22 22:10:08 | INFO     | app.core.database:connect:40 - MongoDB connection established successfully
-2026-02-22 22:10:08 | INFO     | app.core.database:connect:57 - Beanie ODM initialized successfully
-2026-02-22 22:10:08 | INFO     | app.core.database:create_indexes:73 - Creating database indexes...
-2026-02-22 22:10:08 | INFO     | app.core.database:create_indexes:82 - Database indexes created successfully
-2026-02-22 22:10:08 | INFO     | app.main:lifespan:35 - MongoDB connected
-2026-02-22 22:10:08 | INFO     | app.core.redis_client:connect:26 - Connecting to Redis at redis://localhost:6379
-2026-02-22 22:10:08 | INFO     | app.core.redis_client:connect:41 - Redis connection established successfully
-2026-02-22 22:10:08 | INFO     | app.main:lifespan:39 - Redis connected
-2026-02-22 22:10:08 | INFO     | app.main:lifespan:41 - Application started successfully on development environment
-2026-02-22 22:10:36 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1393754 chars from https://www.emiratesnbd.com/en/cards/credit-cards
-2026-02-22 22:10:45 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
-2026-02-22 22:13:43 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
-2026-02-22 22:13:50 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 67764 chars from https://www.emiratesnbd.com/en/campaigns/credit-card-apply?campaign=mastercard-platinum-credit-card
-2026-02-22 22:13:58 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1051789 chars from https://www.emiratesnbd.com/en/help-and-support/earning-plus-points
-2026-02-22 22:14:07 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1046542 chars from https://www.emiratesnbd.com/en/help-and-support/airport-lounge-access-mastercard
-2026-02-22 22:14:14 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1002028 chars from https://www.emiratesnbd.com/en/help-and-support/golf-privileges
-2026-02-22 22:14:14 | INFO     | app.services.ollama_client:_do_call:115 - LLM call attempt 1/2 model=phi prompt=1123 chars
-2026-02-22 22:14:59 | INFO     | app.services.ollama_client:_do_call:128 - LLM response: 5141 chars
-2026-02-22 22:15:07 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1063259 chars from https://www.emiratesnbd.com/en/help-and-support/mastercard-benefits
-2026-02-22 22:15:07 | INFO     | app.services.ollama_client:_do_call:115 - LLM call attempt 1/2 model=phi prompt=7019 chars
-2026-02-22 22:15:25 | INFO     | app.services.ollama_client:_do_call:128 - LLM response: 1392 chars
-2026-02-22 22:15:34 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1166705 chars from https://www.emiratesnbd.com/en/cards/credit-cards/mastercard-platinum-credit-card#tab_deals_dining
-2026-02-22 22:15:43 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1166689 chars from https://www.emiratesnbd.com/en/cards/credit-cards/mastercard-platinum-credit-card#tab_deals_travel
-2026-02-22 22:15:53 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1166694 chars from https://www.emiratesnbd.com/en/cards/credit-cards/mastercard-platinum-credit-card#tab_deals_shopping
-2026-02-22 22:16:02 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1166703 chars from https://www.emiratesnbd.com/en/cards/credit-cards/mastercard-platinum-credit-card#tab_deals_0-installment
-2026-02-22 22:16:11 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1166712 chars from https://www.emiratesnbd.com/en/cards/credit-cards/mastercard-platinum-credit-card#tab_deals_goodtimes
-2026-02-22 22:16:21 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1032171 chars from https://www.emiratesnbd.com/en/deals/bon-appetit/copthorne-hotel-dubai-gazebo-terrace
-2026-02-22 22:16:30 | INFO     | app.api.routes.extraction_unified:scrape_with_playwright:194 - Playwright scraped 1031215 chars from https://www.emiratesnbd.com/en/deals/bon-appetit/copthorne-hotel-dubai-delice-caf
+2026-02-24 07:40:49 | INFO     | app.services.ollama_client:__init__:42 - OllamaClient initialized: base_url=http://localhost:11434, model=phi
+2026-02-24 07:40:49 | INFO     | app.services.enhanced_llm_service:__init__:45 - EnhancedLLMService initialized: base_url=http://localhost:11434, model=phi
+2026-02-24 07:40:49 | WARNING  | app.api.routes.batch:<module>:22 - batch_service unavailable (ExtractionJob model removed). Batch endpoints disabled.
+2026-02-24 07:40:50 | INFO     | app.main:lifespan:30 - Starting application...
+2026-02-24 07:40:50 | INFO     | app.core.database:connect:27 - Connecting to MongoDB at mongodb://localhost:27017
+2026-02-24 07:40:50 | INFO     | app.core.database:connect:40 - MongoDB connection established successfully
+2026-02-24 07:40:50 | INFO     | app.core.database:connect:57 - Beanie ODM initialized successfully
+2026-02-24 07:40:50 | INFO     | app.core.database:create_indexes:73 - Creating database indexes...
+2026-02-24 07:40:50 | INFO     | app.core.database:create_indexes:82 - Database indexes created successfully
+2026-02-24 07:40:50 | INFO     | app.main:lifespan:35 - MongoDB connected
+2026-02-24 07:40:50 | INFO     | app.core.redis_client:connect:26 - Connecting to Redis at redis://localhost:6379
+2026-02-24 07:40:50 | INFO     | app.core.redis_client:connect:41 - Redis connection established successfully
+2026-02-24 07:40:50 | INFO     | app.main:lifespan:39 - Redis connected
+2026-02-24 07:40:50 | INFO     | app.main:lifespan:41 - Application started successfully on development environment
+2026-02-24 07:41:09 | INFO     | app.api.routes.vector_routes:get_card_chunks:576 - [Pipeline] get_card_chunks for 'Mastercard Platinum Credit Card' — ChromaDB total docs: 0
+2026-02-24 07:41:09 | WARNING  | app.api.routes.vector_routes:get_card_chunks:579 - [Pipeline] ChromaDB is EMPTY. User needs to vectorize data in DataStore tab first.
+2026-02-24 07:41:09 | INFO     | app.api.routes.vector_routes:get_card_chunks:604 - [Pipeline] Strategy 1 - Exact card_name 'Mastercard Platinum Credit Card': 0 chunks
+2026-02-24 07:41:09 | INFO     | app.api.routes.vector_routes:get_card_chunks:631 - [Pipeline] Strategy 2 - Bank 'emirates_nbd' card_names match: 0 from 0 bank chunks
+2026-02-24 07:41:09 | INFO     | app.api.routes.vector_routes:get_card_chunks:658 - [Pipeline] Strategy 3 - URL match 'https://www.emiratesnbd.com/en/cards/credit-cards/mastercard': 0 chunks
+2026-02-24 07:41:09 | INFO     | app.api.routes.vector_routes:get_card_chunks:684 - [Pipeline] Strategy 3 - URL match 'https://www.emiratesnbd.com/en/cards/credit-cards/': 0 chunks
+2026-02-24 07:41:09 | INFO     | app.api.routes.vector_routes:get_card_chunks:719 - [Pipeline] Strategy 4 - Text match for 'Mastercard Platinum Credit Card': 0 chunks
+2026-02-24 07:41:09 | INFO     | app.api.routes.vector_routes:get_card_chunks:723 - [Pipeline] TOTAL chunks for 'Mastercard Platinum Credit Card': 0
+2026-02-24 07:42:02 | INFO     | app.api.routes.vector_routes:get_card_chunks:576 - [Pipeline] get_card_chunks for 'Mastercard Platinum Credit Card' — ChromaDB total docs: 784
+2026-02-24 07:42:02 | INFO     | app.api.routes.vector_routes:get_card_chunks:604 - [Pipeline] Strategy 1 - Exact card_name 'Mastercard Platinum Credit Card': 784 chunks
+2026-02-24 07:42:02 | INFO     | app.api.routes.vector_routes:get_card_chunks:631 - [Pipeline] Strategy 2 - Bank 'emirates_nbd' card_names match: 0 from 784 bank chunks
+2026-02-24 07:42:02 | INFO     | app.api.routes.vector_routes:get_card_chunks:658 - [Pipeline] Strategy 3 - URL match 'https://www.emiratesnbd.com/en/cards/credit-cards/mastercard': 0 chunks
+2026-02-24 07:42:02 | INFO     | app.api.routes.vector_routes:get_card_chunks:723 - [Pipeline] TOTAL chunks for 'Mastercard Platinum Credit Card': 784

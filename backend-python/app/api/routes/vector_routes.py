@@ -24,6 +24,7 @@ router = APIRouter(prefix="/api/v4/vector", tags=["Vector Store"])
 
 class IndexRequest(BaseModel):
     saved_id: str = Field(..., description="The saved_id from approved_raw_data")
+    clear_old: bool = Field(False, description="Clear old vectors for this card before indexing")
 
 
 class QueryRequest(BaseModel):
@@ -317,7 +318,7 @@ async def preview_chunks(request: IndexRequest):
 async def index_record(request: IndexRequest):
     """
     Index an approved_raw_data record into the vector store.
-    Same as /index but with clearer naming for the Data Store flow.
+    Optionally clears old vectors for this card first.
     """
     if not vector_store.available:
         raise HTTPException(status_code=503, detail="Vector store not available. Install chromadb and run 'ollama pull nomic-embed-text'.")
@@ -329,8 +330,27 @@ async def index_record(request: IndexRequest):
     
     try:
         from datetime import datetime
+        
+        cleared = 0
+        if request.clear_old:
+            card_name = raw_data.get("detected_card_name") or raw_data.get("card_name") or ""
+            if card_name:
+                cleared = vector_store.clear_card_vectors(card_name)
+        
         result = await vector_store.index_approved_data(raw_data)
         vector_chunks = result.get("chunks", 0)
+        total_docs = result.get("total_docs", 0)
+
+        if vector_chunks == 0:
+            # Indexing produced 0 chunks — likely Ollama not running
+            return {
+                "success": False,
+                "saved_id": request.saved_id,
+                "vector_chunks": 0,
+                "card_name": raw_data.get("detected_card_name", "Unknown"),
+                "old_chunks_cleared": cleared,
+                "error": "0 chunks were indexed. Most likely cause: Ollama is not running or the embedding model (nomic-embed-text) is not pulled. Run: ollama pull nomic-embed-text && ollama serve",
+            }
         
         await db.approved_raw_data.update_one(
             {"saved_id": request.saved_id},
@@ -345,7 +365,9 @@ async def index_record(request: IndexRequest):
             "success": True,
             "saved_id": request.saved_id,
             "vector_chunks": vector_chunks,
+            "total_docs_in_store": total_docs,
             "card_name": raw_data.get("detected_card_name", "Unknown"),
+            "old_chunks_cleared": cleared,
         }
     except Exception as e:
         logger.error(f"Indexing failed for {request.saved_id}: {e}")
@@ -353,7 +375,7 @@ async def index_record(request: IndexRequest):
 
 
 @router.get("/record-data/{saved_id}")
-async def get_record_vector_data(saved_id: str, limit: int = 200):
+async def get_record_vector_data(saved_id: str, limit: int = 2000):
     """
     View indexed vector data for a specific approved_raw_data record.
     Returns chunks grouped by source with full metadata.
@@ -446,63 +468,78 @@ async def vector_stats():
 @router.get("/banks")
 async def list_banks_with_cards():
     """
-    List all banks and their discovered cards from session_cards collection.
-    Groups cards by bank (from session metadata).
+    List all banks and their discovered cards from V4 and V5 collections,
+    plus any cards in approved_raw_data (vectorized records).
     """
     db = await get_database()
-    
-    # Get all sessions with bank info
-    sessions = await db.v4_sessions.find(
-        {"bank_name": {"$ne": None, "$ne": ""}},
-        {"session_id": 1, "bank_key": 1, "bank_name": 1}
-    ).to_list(length=500)
-    
-    session_bank_map = {}
-    for s in sessions:
-        session_bank_map[s["session_id"]] = {
-            "bank_key": s.get("bank_key", ""),
-            "bank_name": s.get("bank_name", ""),
-        }
-    
-    # Get all cards from session_cards
-    all_cards = await db.session_cards.find({}).to_list(length=2000)
-    
-    # Group by bank
     banks = {}
-    for card in all_cards:
-        sid = card.get("session_id", "")
-        bank_info = session_bank_map.get(sid, {})
-        bank_name = bank_info.get("bank_name", "Unknown Bank")
-        bank_key = bank_info.get("bank_key", "")
-        
-        if not bank_name or bank_name == "Unknown Bank":
-            # Try to detect from card URL
+
+    def _add_card(bank_name, bank_key, card):
+        if not bank_name:
             from app.core.banks import detect_bank_from_url, get_bank_name
             bk = detect_bank_from_url(card.get("card_url", ""))
             if bk:
                 bank_key = bk
-                bank_name = get_bank_name(bk) or bank_name
-        
+                bank_name = get_bank_name(bk) or "Unknown Bank"
+            else:
+                bank_name = "Unknown Bank"
         if bank_name not in banks:
-            banks[bank_name] = {
-                "bank_name": bank_name,
-                "bank_key": bank_key,
-                "cards": [],
-            }
-        
-        # Check if this card name already exists (dedup across sessions)
+            banks[bank_name] = {"bank_name": bank_name, "bank_key": bank_key, "cards": []}
         existing_names = [c["card_name"] for c in banks[bank_name]["cards"]]
         if card["card_name"] not in existing_names:
-            banks[bank_name]["cards"].append({
-                "card_id": card["card_id"],
-                "card_name": card["card_name"],
-                "card_url": card.get("card_url", ""),
-                "card_network": card.get("card_network", ""),
-                "card_tier": card.get("card_tier", ""),
-                "card_image": card.get("card_image"),
-                "session_id": sid,
+            banks[bank_name]["cards"].append(card)
+
+    # --- V4: session_cards + v4_sessions ---
+    v4_sessions = await db.v4_sessions.find(
+        {"bank_name": {"$ne": None, "$ne": ""}},
+        {"session_id": 1, "bank_key": 1, "bank_name": 1}
+    ).to_list(length=500)
+    v4_bank_map = {s["session_id"]: s for s in v4_sessions}
+
+    v4_cards = await db.session_cards.find({}).to_list(length=2000)
+    for card in v4_cards:
+        info = v4_bank_map.get(card.get("session_id", ""), {})
+        _add_card(info.get("bank_name", ""), info.get("bank_key", ""), {
+            "card_id": card.get("card_id", ""),
+            "card_name": card["card_name"],
+            "card_url": card.get("card_url", ""),
+            "card_network": card.get("card_network", ""),
+            "card_tier": card.get("card_tier", ""),
+            "card_image": card.get("card_image"),
+            "source": "v4",
+        })
+
+    # --- V5: v5_cards + v5_sessions ---
+    v5_cards = await db.v5_cards.find({}).to_list(length=2000)
+    for card in v5_cards:
+        _add_card(card.get("bank_name", ""), card.get("bank_key", ""), {
+            "card_id": card.get("card_id", ""),
+            "card_name": card["card_name"],
+            "card_url": card.get("card_url", ""),
+            "card_network": card.get("card_network", ""),
+            "card_tier": card.get("card_tier", ""),
+            "card_image": card.get("card_image_url"),
+            "source": "v5",
+        })
+
+    # --- approved_raw_data (vectorized records) ---
+    raw_records = await db.approved_raw_data.find(
+        {"vector_indexed": True},
+        {"detected_card_name": 1, "primary_url": 1, "bank_key": 1, "detected_bank": 1,
+         "card_network": 1, "card_tier": 1}
+    ).to_list(length=500)
+    for rec in raw_records:
+        cn = rec.get("detected_card_name", "")
+        if cn:
+            _add_card(rec.get("detected_bank", ""), rec.get("bank_key", ""), {
+                "card_id": str(rec.get("_id", "")),
+                "card_name": cn,
+                "card_url": rec.get("primary_url", ""),
+                "card_network": rec.get("card_network", ""),
+                "card_tier": rec.get("card_tier", ""),
+                "source": "vectorized",
             })
-    
+
     return {
         "success": True,
         "banks": sorted(banks.values(), key=lambda b: b["bank_name"]),
@@ -516,7 +553,7 @@ async def get_card_chunks(
     card_name: str,
     bank_key: Optional[str] = None,
     card_url: Optional[str] = None,
-    limit: int = 500,
+    limit: int = 2000,
 ):
     """
     Find ALL vector chunks related to a specific card.
@@ -536,6 +573,10 @@ async def get_card_chunks(
     db = await get_database()
     collection = vector_store._collection
     total_in_store = collection.count()
+    logger.info(f"[Pipeline] get_card_chunks for '{card_name}' — ChromaDB total docs: {total_in_store}")
+
+    if total_in_store == 0:
+        logger.warning("[Pipeline] ChromaDB is EMPTY. User needs to vectorize data in DataStore tab first.")
     
     all_chunks = []
     seen_ids = set()

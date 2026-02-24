@@ -63,8 +63,12 @@ async def scrape_card_page_interactive(url: str, card_name: str = "") -> Dict[st
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             })
 
-            # Navigate
-            await page.goto(url, wait_until="networkidle", timeout=30000)
+            # Navigate — use domcontentloaded first (reliable), then try networkidle briefly
+            await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=10000)
+            except Exception:
+                pass  # Many bank sites never reach networkidle due to analytics
 
             # Smart scroll to load lazy content
             await _smart_scroll(page)
@@ -108,7 +112,7 @@ async def scrape_card_page_interactive(url: str, card_name: str = "") -> Dict[st
                         const walk = (node, depth) => {
                             if (depth > 20) return;  // Safety limit
                             if (node.nodeType === 3) {  // Text node
-                                const t = node.textContent?.replace(/\s+/g, ' ').trim();
+                                const t = node.textContent?.replace(/\\s+/g, ' ').trim();
                                 if (t && t.length > 1) lines.push(t);
                                 return;
                             }
@@ -123,7 +127,7 @@ async def scrape_card_page_interactive(url: str, card_name: str = "") -> Dict[st
                                 const hasBlockChild = Array.from(node.children).some(c => blockTags.has(c.tagName));
                                 if (!hasBlockChild) {
                                     // Leaf block — get its text as one line
-                                    const t = node.innerText?.replace(/\s+/g, ' ').trim();
+                                    const t = node.innerText?.replace(/\\s+/g, ' ').trim();
                                     if (t && t.length > 1) {
                                         const prefix = listTags.has(node.tagName) ? '• ' : '';
                                         lines.push(prefix + t);
@@ -513,7 +517,7 @@ async def _click_and_capture(page, section_heading: str, item: Dict, base_url: s
                 const walk = (node, depth) => {
                     if (depth > 20) return;
                     if (node.nodeType === 3) {
-                        const t = node.textContent?.replace(/\s+/g, ' ').trim();
+                        const t = node.textContent?.replace(/\\s+/g, ' ').trim();
                         if (t && t.length > 1) lines.push(t);
                         return;
                     }
@@ -524,7 +528,7 @@ async def _click_and_capture(page, section_heading: str, item: Dict, base_url: s
                     if (blockTags.has(node.tagName)) {
                         const hasBlockChild = Array.from(node.children).some(c => blockTags.has(c.tagName));
                         if (!hasBlockChild) {
-                            const t = node.innerText?.replace(/\s+/g, ' ').trim();
+                            const t = node.innerText?.replace(/\\s+/g, ' ').trim();
                             if (t && t.length > 1) {
                                 const prefix = listTags.has(node.tagName) ? '• ' : '';
                                 lines.push(prefix + t);

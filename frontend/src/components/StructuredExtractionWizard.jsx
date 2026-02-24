@@ -1,10 +1,14 @@
 /**
- * Structured Extraction Wizard (V5)
+ * Structured Extraction Wizard - V5
  *
- * Step 1: Select bank → Depth 0 discovers cards with summaries
- * Step 2: Select cards → Depth 1 sections each card page
- * Step 3: Review card sections + auto-process depth 2-3 (shared benefits)
- * Step 4: Review all extracted benefits by card
+ * Two input modes:
+ *   A. Bank-Wide: Select bank, Depth 0 discovers cards with summaries
+ *   B. Single Card: Paste card URL, auto-detect bank/card
+ *
+ * Step 1: Choose mode and input, Create session
+ * Step 2: Select cards, Depth 1 sections each card page
+ * Step 3: Review card sections + manage URLs, process depth 2-3
+ * Step 4: Review depth 2-3 sections, Store approved to DataStore
  */
 
 import React, { useState, useEffect } from 'react';
@@ -12,7 +16,7 @@ import {
   Zap, ChevronRight, ChevronLeft, CheckCircle, AlertCircle,
   Loader2, ExternalLink, RefreshCw, CreditCard, X, Eye,
   CheckSquare, Square, Database, Search, ChevronDown, ChevronUp,
-  Layers, Globe
+  Layers, Globe, Link, Building2, Settings2
 } from 'lucide-react';
 
 const API = 'http://localhost:8000/api/v5/extraction';
@@ -31,15 +35,30 @@ const BANKS = [
   { key: 'mashreq', name: 'Mashreq Bank' },
 ];
 
+const QUICK_EXAMPLES = [
+  { name: 'ENBD Duo', url: 'https://www.emiratesnbd.com/en/cards/credit-cards/duo-credit-card' },
+  { name: 'ENBD Platinum MC', url: 'https://www.emiratesnbd.com/en/cards/credit-cards/mastercard-platinum-credit-card' },
+  { name: 'FAB Cashback', url: 'https://www.bankfab.com/en-ae/personal/cards/credit-cards/cashback-credit-card' },
+  { name: 'ADCB TouchPoints', url: 'https://www.adcb.com/en/personal/cards/credit-cards/touchpoints-platinum' },
+];
+
 export default function StructuredExtractionWizard() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState('');
   const [error, setError] = useState('');
 
+  // Step 1: Input mode
+  const [mode, setMode] = useState('bank_wide'); // bank_wide | single_card
+  const [bankKey, setBankKey] = useState('');
+  const [customBankUrl, setCustomBankUrl] = useState('');
+  const [singleCardUrl, setSingleCardUrl] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [usePlaywright, setUsePlaywright] = useState(true);
+  const [maxDepth, setMaxDepth] = useState(3);
+
   // Session
   const [sessionId, setSessionId] = useState(null);
-  const [bankKey, setBankKey] = useState('');
   const [bankName, setBankName] = useState('');
 
   // Step 1: Cards
@@ -62,20 +81,39 @@ export default function StructuredExtractionWizard() {
   const [expandedSections, setExpandedSections] = useState(new Set());
 
   // ============= STEP 1: Create session & discover cards =============
-  const discoverCards = async () => {
-    if (!bankKey) { setError('Please select a bank'); return; }
-    setLoading(true); setLoadingMsg('Discovering cards from bank listing page...'); setError('');
+  const createSession = async () => {
+    setError('');
+    const body = { use_playwright: usePlaywright, max_depth: maxDepth };
+
+    if (mode === 'single_card') {
+      if (!singleCardUrl.trim()) { setError('Please enter a card URL'); return; }
+      body.mode = 'single_card';
+      body.single_card_url = singleCardUrl.trim();
+    } else {
+      // bank_wide
+      if (!bankKey && !customBankUrl.trim()) { setError('Please select a bank or enter a bank URL'); return; }
+      body.mode = 'bank_wide';
+      if (bankKey) body.bank_key = bankKey;
+      if (customBankUrl.trim()) body.custom_bank_url = customBankUrl.trim();
+    }
+
+    setLoading(true);
+    setLoadingMsg(mode === 'single_card' ? 'Creating session for card...' : 'Discovering cards from bank listing page...');
     try {
       const res = await fetch(`${API}/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bank_key: bankKey, use_playwright: true, max_depth: 3 }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Failed to discover cards');
+      if (!res.ok) throw new Error(data.detail || 'Failed to create session');
       setSessionId(data.session_id);
       setBankName(data.bank_name);
       setCards(data.cards || []);
+      // For single card, auto-select it
+      if (mode === 'single_card' && data.cards?.length === 1) {
+        setSelectedCardIds(new Set([data.cards[0].card_id]));
+      }
       setStep(2);
     } catch (err) { setError(err.message); }
     finally { setLoading(false); setLoadingMsg(''); }
@@ -171,38 +209,69 @@ export default function StructuredExtractionWizard() {
 
   // ============= STEP 3: Process depth 2-3 =============
   const processDepth2 = async () => {
-    setLoading(true); setLoadingMsg('Processing shared benefit pages (depth 2-3)...'); setError('');
+    setLoading(true); setLoadingMsg('Scraping & sectioning benefit pages (depth 2-3)...'); setError('');
     try {
       const res = await fetch(`${API}/sessions/${sessionId}/process-depth2`, { method: 'POST' });
       const data = await res.json();
+      console.log('[V5] Depth 2-3 response:', data);
       if (!res.ok) throw new Error(data.detail || 'Depth 2 processing failed');
       setDepth2Results(data);
-      // Load all benefits
-      const benRes = await fetch(`${API}/sessions/${sessionId}/benefits`);
-      const benData = await benRes.json();
-      setAllBenefits(benData);
+      // Load depth2 sections for review
+      await loadDepth2Sections();
       setStep(4);
     } catch (err) { setError(err.message); }
     finally { setLoading(false); setLoadingMsg(''); }
   };
 
-  // ============= STEP 4: View benefits by card =============
-  const loadBenefitsForCard = async (cardName) => {
-    setSelectedViewCard(cardName);
+  // ============= STEP 4: Review & manage depth 2-3 sections =============
+  const [d2Sections, setD2Sections] = useState(null);
+  const [expandedD2Url, setExpandedD2Url] = useState(null);
+  const [storeResult, setStoreResult] = useState(null);
+
+  const loadDepth2Sections = async () => {
     try {
-      const res = await fetch(`${API}/sessions/${sessionId}/benefits/by-card/${encodeURIComponent(cardName)}`);
+      const res = await fetch(`${API}/sessions/${sessionId}/depth2-sections`);
       const data = await res.json();
-      setCardBenefits(data);
+      setD2Sections(data);
     } catch (err) { setError(err.message); }
+  };
+
+  const deleteD2Section = async (sectionId) => {
+    if (!window.confirm('Delete this section? It will not be stored.')) return;
+    try {
+      await fetch(`${API}/sessions/${sessionId}/depth2-sections/${sectionId}`, { method: 'DELETE' });
+      await loadDepth2Sections();
+    } catch (err) { setError(err.message); }
+  };
+
+  const toggleD2Section = async (sectionId) => {
+    try {
+      await fetch(`${API}/sessions/${sessionId}/depth2-sections/${sectionId}/toggle`, { method: 'POST' });
+      await loadDepth2Sections();
+    } catch (err) { setError(err.message); }
+  };
+
+  const storeApproved = async () => {
+    setLoading(true); setLoadingMsg('Storing approved sections...'); setError('');
+    try {
+      const res = await fetch(`${API}/sessions/${sessionId}/store-approved`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Store failed');
+      setStoreResult(data);
+      await loadDepth2Sections();
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); setLoadingMsg(''); }
   };
 
   // ============= Helpers =============
   const resetFlow = () => {
     setStep(1); setSessionId(null); setBankKey(''); setBankName('');
+    setMode('bank_wide'); setSingleCardUrl(''); setCustomBankUrl('');
     setCards([]); setSelectedCardIds(new Set());
     setDepth1Results(null); setDepth2Results(null);
     setCardSections({}); setExpandedCard(null);
     setAllBenefits(null); setCardBenefits(null); setSelectedViewCard(null);
+    setD2Sections(null); setStoreResult(null); setExpandedD2Url(null);
     setError('');
   };
 
@@ -266,26 +335,117 @@ export default function StructuredExtractionWizard() {
         </div>
       )}
 
-      {/* ============= STEP 1: SELECT BANK ============= */}
+      {/* ============= STEP 1: INPUT MODE ============= */}
       {step === 1 && !loading && (
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-            <Globe size={20} /> Select Bank
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {BANKS.map(bank => (
-              <button key={bank.key} onClick={() => setBankKey(bank.key)}
-                className={`p-4 rounded-lg border text-center transition-all ${
-                  bankKey === bank.key ? 'border-teal-400 bg-teal-50 ring-2 ring-teal-200 shadow-sm' : 'bg-white hover:border-teal-200'
-                }`}>
-                <div className="text-2xl mb-1">🏦</div>
-                <div className="font-medium text-gray-800 text-sm">{bank.name}</div>
-              </button>
-            ))}
+        <div className="space-y-5">
+          {/* Mode Selection */}
+          <div className="grid md:grid-cols-2 gap-4">
+            <button onClick={() => setMode('bank_wide')}
+              className={`p-5 rounded-lg border-2 text-left transition-all ${
+                mode === 'bank_wide' ? 'border-teal-500 bg-teal-50 ring-1 ring-teal-200' : 'border-gray-200 hover:border-gray-300'
+              }`}>
+              <Building2 className={`mb-2 ${mode === 'bank_wide' ? 'text-teal-600' : 'text-gray-400'}`} size={28} />
+              <h3 className="font-semibold text-gray-800">Bank-Wide Discovery</h3>
+              <p className="text-xs text-gray-500 mt-1">Discover all credit cards from a bank</p>
+            </button>
+            <button onClick={() => setMode('single_card')}
+              className={`p-5 rounded-lg border-2 text-left transition-all ${
+                mode === 'single_card' ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200' : 'border-gray-200 hover:border-gray-300'
+              }`}>
+              <CreditCard className={`mb-2 ${mode === 'single_card' ? 'text-blue-600' : 'text-gray-400'}`} size={28} />
+              <h3 className="font-semibold text-gray-800">Single Card URL</h3>
+              <p className="text-xs text-gray-500 mt-1">Extract from a specific card page URL</p>
+            </button>
           </div>
-          <button onClick={discoverCards} disabled={!bankKey || loading}
-            className="w-full py-3 bg-gradient-to-r from-teal-600 to-blue-600 text-white rounded-lg hover:from-teal-700 hover:to-blue-700 flex items-center justify-center gap-2 font-medium disabled:opacity-50">
-            <Search size={20} /> Discover Cards (Depth 0)
+
+          {/* Bank-Wide: Bank selection + optional custom URL */}
+          {mode === 'bank_wide' && (
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-gray-700">Select Bank</label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {BANKS.map(bank => (
+                  <button key={bank.key} onClick={() => { setBankKey(bank.key); setCustomBankUrl(''); }}
+                    className={`p-3 rounded-lg border text-center transition-all ${
+                      bankKey === bank.key ? 'border-teal-400 bg-teal-50 ring-2 ring-teal-200 shadow-sm' : 'bg-white hover:border-teal-200'
+                    }`}>
+                    <div className="text-xl mb-0.5">🏦</div>
+                    <div className="font-medium text-gray-800 text-sm">{bank.name}</div>
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-gray-400">
+                <div className="flex-1 h-px bg-gray-200" /> or enter a custom bank URL <div className="flex-1 h-px bg-gray-200" />
+              </div>
+              <input type="url" value={customBankUrl}
+                onChange={(e) => { setCustomBankUrl(e.target.value); if (e.target.value) setBankKey(''); }}
+                placeholder="https://www.bank.com/credit-cards"
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-sm" />
+            </div>
+          )}
+
+          {/* Single Card: URL input + quick examples */}
+          {mode === 'single_card' && (
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-gray-700">Card Page URL</label>
+              <input type="url" value={singleCardUrl}
+                onChange={(e) => setSingleCardUrl(e.target.value)}
+                placeholder="https://www.bank.com/credit-cards/card-name"
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-gray-500">Quick examples:</span>
+                {QUICK_EXAMPLES.map(ex => (
+                  <button key={ex.name} onClick={() => setSingleCardUrl(ex.url)}
+                    className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 transition-colors">
+                    {ex.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Advanced Options */}
+          <div className="border rounded-lg">
+            <button onClick={() => setShowAdvanced(!showAdvanced)}
+              className="w-full p-3 flex items-center justify-between text-left hover:bg-gray-50 rounded-lg">
+              <span className="flex items-center gap-2 font-medium text-sm text-gray-700">
+                <Settings2 size={16} /> Advanced Options
+              </span>
+              {showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+            {showAdvanced && (
+              <div className="p-4 border-t space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium">Playwright / Chromium</div>
+                    <div className="text-xs text-gray-500">Use browser for JS-rendered pages</div>
+                  </div>
+                  <button onClick={() => setUsePlaywright(!usePlaywright)}
+                    className={`w-11 h-6 rounded-full transition-colors ${usePlaywright ? 'bg-purple-600' : 'bg-gray-300'}`}>
+                    <div className={`w-5 h-5 bg-white rounded-full shadow transform transition-transform ${usePlaywright ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium">Max Crawl Depth</div>
+                    <div className="text-xs text-gray-500">How many levels of links to follow</div>
+                  </div>
+                  <select value={maxDepth} onChange={(e) => setMaxDepth(parseInt(e.target.value))}
+                    className="border rounded px-2 py-1 text-sm">
+                    <option value={1}>1 (card page only)</option>
+                    <option value={2}>2 (+ shared benefits)</option>
+                    <option value={3}>3 (+ deeper links)</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Go Button */}
+          <button onClick={createSession}
+            disabled={loading || (mode === 'bank_wide' && !bankKey && !customBankUrl.trim()) || (mode === 'single_card' && !singleCardUrl.trim())}
+            className="w-full py-3 bg-gradient-to-r from-teal-600 to-blue-600 text-white rounded-lg hover:from-teal-700 hover:to-blue-700 flex items-center justify-center gap-2 font-medium disabled:opacity-50 transition-all">
+            <Search size={20} />
+            {mode === 'bank_wide' ? 'Discover Cards (Depth 0)' : 'Extract Card (Single URL)'}
           </button>
         </div>
       )}
@@ -480,131 +640,111 @@ export default function StructuredExtractionWizard() {
         </div>
       )}
 
-      {/* ============= STEP 4: REVIEW ALL BENEFITS ============= */}
+      {/* ============= STEP 4: REVIEW DEPTH 2-3 SECTIONS ============= */}
       {step === 4 && !loading && (
         <div className="space-y-4">
+          {/* Stats */}
           {depth2Results && (
-            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-              <h3 className="font-bold text-green-800 flex items-center gap-2">
-                <CheckCircle size={20} /> All Depths Complete
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h3 className="font-bold text-blue-800 flex items-center gap-2">
+                <CheckCircle size={20} /> Depth 2-3 Scraped — Review Sections
               </h3>
               <div className="grid grid-cols-4 gap-3 mt-2 text-center">
                 <div><div className="text-xl font-bold text-green-700">{depth2Results.urls_processed}</div><div className="text-xs text-gray-500">URLs Processed</div></div>
-                <div><div className="text-xl font-bold text-blue-700">{depth2Results.urls_cached}</div><div className="text-xs text-gray-500">URLs Cached</div></div>
-                <div><div className="text-xl font-bold text-purple-700">{depth2Results.benefits_extracted}</div><div className="text-xs text-gray-500">Benefits Found</div></div>
-                <div><div className="text-xl font-bold text-orange-700">{depth2Results.depth3_urls_discovered}</div><div className="text-xs text-gray-500">Depth 3 URLs</div></div>
+                <div><div className="text-xl font-bold text-blue-700">{depth2Results.total_sections}</div><div className="text-xs text-gray-500">Sections Found</div></div>
+                <div><div className="text-xl font-bold text-purple-700">{depth2Results.depth3_urls_discovered}</div><div className="text-xs text-gray-500">Depth 3 URLs</div></div>
+                <div><div className="text-xl font-bold text-gray-500">{depth2Results.urls_cached}</div><div className="text-xs text-gray-500">Cached</div></div>
               </div>
+              <p className="text-xs text-blue-600 mt-2">Review sections below. Uncheck or delete unwanted ones, then click "Store Approved" to save.</p>
             </div>
           )}
 
-          {/* Category breakdown */}
-          {allBenefits?.category_breakdown && (
-            <div>
-              <h3 className="font-medium text-gray-700 mb-2">Benefits by Category</h3>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(allBenefits.category_breakdown).sort((a, b) => b[1] - a[1]).map(([cat, count]) => (
-                  <span key={cat} className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border rounded-full text-sm">
-                    <span>{CATEGORY_ICONS[cat] || '📄'}</span>
-                    <span className="font-medium">{cat}</span>
-                    <span className="text-xs text-gray-400">{count}</span>
-                  </span>
-                ))}
+          {storeResult && (
+            <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm space-y-1">
+              <div className="flex items-center gap-2 font-medium">
+                <CheckCircle size={16} /> Stored {storeResult.stored} sections + {storeResult.total_raw_records || 0} card records to database.
               </div>
-            </div>
-          )}
-
-          {/* View by card */}
-          <div>
-            <h3 className="font-medium text-gray-700 mb-2">View Benefits by Card</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {cards.filter(c => selectedCardIds.has(c.card_id)).map(card => (
-                <button key={card.card_id} onClick={() => loadBenefitsForCard(card.card_name)}
-                  className={`p-3 border rounded-lg text-left transition-all ${
-                    selectedViewCard === card.card_name ? 'border-teal-400 bg-teal-50' : 'hover:border-teal-200'
-                  }`}>
-                  <div className="flex items-center gap-2">
-                    <CreditCard size={16} className="text-gray-400" />
-                    <span className="font-medium text-sm">{card.card_name}</span>
-                    {card.card_network && <span className="text-xs bg-blue-100 text-blue-700 px-1 rounded">{card.card_network}</span>}
-                  </div>
-                </button>
+              {storeResult.raw_records?.map((r, i) => (
+                <div key={i} className="text-xs text-green-600 ml-6">
+                  📄 {r.card_name}: {r.sources} sections, {(r.chars || 0).toLocaleString()} chars → Data Store ready
+                </div>
               ))}
+              <p className="text-xs text-green-500 ml-6">Go to "Data Store & Vectorize" tab to view and vectorize this data.</p>
             </div>
-          </div>
+          )}
 
-          {/* Card benefits display */}
-          {cardBenefits && selectedViewCard && (
-            <div className="border rounded-lg overflow-hidden">
-              <div className="p-3 bg-teal-50 border-b border-teal-200">
-                <h4 className="font-bold text-teal-800">{selectedViewCard}</h4>
-                <p className="text-xs text-teal-600 mt-0.5">
-                  {cardBenefits.card_sections?.length || 0} card sections · {cardBenefits.shared_benefits?.length || 0} shared benefits
-                </p>
-              </div>
-
-              {/* Card-specific sections (depth 1) */}
-              {cardBenefits.card_sections?.length > 0 && (
-                <div className="p-3 border-b">
-                  <h5 className="text-sm font-medium text-gray-700 mb-2">📄 Card-Specific Sections (Depth 1)</h5>
-                  <div className="space-y-2">
-                    {cardBenefits.card_sections.map((sec, i) => (
-                      <details key={i} className="bg-gray-50 rounded border">
-                        <summary className="p-2 cursor-pointer text-sm font-medium flex items-center gap-2">
-                          <span>{CATEGORY_ICONS[sec.section_type] || '📄'}</span>
-                          {sec.section_name}
-                          <span className="text-xs text-gray-400 ml-auto">{sec.section_type}</span>
-                        </summary>
-                        <div className="p-2 text-xs text-gray-600 whitespace-pre-wrap border-t">{sec.content}</div>
-                      </details>
+          {/* Sections grouped by source URL */}
+          {d2Sections?.urls?.map(urlGroup => (
+            <div key={urlGroup.source_url} className="border rounded-lg overflow-hidden">
+              <div className="p-3 bg-gray-50 cursor-pointer hover:bg-gray-100 flex items-center gap-2"
+                onClick={() => setExpandedD2Url(expandedD2Url === urlGroup.source_url ? null : urlGroup.source_url)}>
+                <ExternalLink size={14} className="text-blue-500 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-gray-700 truncate">{urlGroup.source_url}</div>
+                  <div className="flex gap-2 mt-0.5 flex-wrap">
+                    <span className="text-xs text-gray-500">Depth {urlGroup.source_depth}</span>
+                    {urlGroup.source_d1_section && <span className="text-xs bg-teal-100 text-teal-700 px-1.5 rounded">from: {urlGroup.source_d1_section}</span>}
+                    {urlGroup.source_card_names?.slice(0, 2).map((cn, i) => (
+                      <span key={i} className="text-xs bg-blue-100 text-blue-700 px-1.5 rounded">{cn}</span>
                     ))}
                   </div>
                 </div>
-              )}
+                <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">{urlGroup.sections.length} sections</span>
+                {expandedD2Url === urlGroup.source_url ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </div>
 
-              {/* Shared benefits (depth 2-3) */}
-              {cardBenefits.shared_benefits?.length > 0 && (
-                <div className="p-3">
-                  <h5 className="text-sm font-medium text-gray-700 mb-2">🔗 Shared Benefits (Depth 2-3)</h5>
-                  <div className="space-y-2">
-                    {cardBenefits.shared_benefits.map((ben, i) => (
-                      <details key={i} className="bg-gray-50 rounded border">
-                        <summary className="p-2 cursor-pointer text-sm flex items-center gap-2">
-                          <span>{CATEGORY_ICONS[ben.benefit_category] || '📄'}</span>
-                          <span className="font-medium">{ben.benefit_name}</span>
-                          <span className="text-xs bg-blue-100 text-blue-700 px-1 rounded ml-auto">{ben.benefit_category}</span>
-                        </summary>
-                        <div className="p-2 border-t space-y-2">
-                          <p className="text-xs text-gray-600 whitespace-pre-wrap">{ben.benefit_text}</p>
-                          {ben.eligible_card_names?.length > 0 && (
-                            <div>
-                              <span className="text-xs font-medium text-gray-500">Eligible Cards:</span>
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {ben.eligible_card_names.map((cn, ci) => (
-                                  <span key={ci} className={`px-1.5 py-0.5 text-xs rounded ${
-                                    cn === selectedViewCard ? 'bg-teal-100 text-teal-700 font-medium' : 'bg-gray-100 text-gray-600'
-                                  }`}>{cn}</span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {ben.conditions?.length > 0 && (
-                            <div>
-                              <span className="text-xs font-medium text-gray-500">Conditions:</span>
-                              {ben.conditions.map((c, ci) => <p key={ci} className="text-xs text-yellow-700 mt-0.5">• {c}</p>)}
-                            </div>
-                          )}
-                          {ben.validity && <p className="text-xs text-purple-600">📅 {ben.validity}</p>}
-                          {ben.source_url && (
-                            <a href={ben.source_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline flex items-center gap-1">
-                              <ExternalLink size={10} /> {ben.source_url}
-                            </a>
+              {expandedD2Url === urlGroup.source_url && (
+                <div className="divide-y">
+                  {urlGroup.sections.map((sec) => {
+                    const isApproved = sec.is_approved !== false;
+                    const isStored = sec.is_stored === true;
+                    const isSubSection = !!sec.parent_section;
+                    return (
+                      <div key={sec.section_id} className={`p-3 ${!isApproved ? 'opacity-50 bg-gray-50' : ''} ${isStored ? 'bg-green-50' : ''} ${isSubSection ? 'ml-5 border-l-2 border-teal-200' : ''}`}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <button onClick={() => toggleD2Section(sec.section_id)} className="shrink-0"
+                            title={isApproved ? 'Skip' : 'Include'} disabled={isStored}>
+                            {isApproved ? <CheckSquare size={16} className="text-teal-600" /> : <Square size={16} className="text-gray-400" />}
+                          </button>
+                          <span>{CATEGORY_ICONS[sec.section_type] || '📄'}</span>
+                          <span className="font-medium text-sm text-gray-700 flex-1">{sec.heading_text || sec.section_name}</span>
+                          {isSubSection && <span className="text-xs bg-teal-100 text-teal-700 px-1 rounded">sub</span>}
+                          <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{sec.section_type}</span>
+                          {sec.link_count > 0 && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{sec.link_count} links</span>}
+                          {isStored && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">stored</span>}
+                          {!isStored && (
+                            <button onClick={() => deleteD2Section(sec.section_id)}
+                              className="text-red-400 hover:text-red-600 shrink-0" title="Delete section">
+                              <X size={14} />
+                            </button>
                           )}
                         </div>
-                      </details>
-                    ))}
-                  </div>
+                        <div className={isSubSection ? 'ml-2' : 'ml-7'}>
+                          <p className="text-xs text-gray-600 whitespace-pre-wrap bg-white border p-2 rounded max-h-40 overflow-y-auto">{sec.content}</p>
+                          {sec.links?.length > 0 && (
+                            <div className="mt-1 space-y-0.5">
+                              <span className="text-xs font-medium text-gray-500">Links:</span>
+                              {sec.links.slice(0, 5).map((l, li) => (
+                                <div key={li} className="flex items-center gap-1 text-xs">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
+                                  <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate">{l.title || l.url}</a>
+                                </div>
+                              ))}
+                              {sec.links.length > 5 && <span className="text-xs text-gray-400">+{sec.links.length - 5} more</span>}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
+            </div>
+          ))}
+
+          {d2Sections && !d2Sections.urls?.length && (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm">
+              No depth 2-3 sections found. Check that depth 1 sections had URLs to process.
             </div>
           )}
 
@@ -612,11 +752,16 @@ export default function StructuredExtractionWizard() {
             <button onClick={() => setStep(3)} className="px-4 py-2 border rounded-lg hover:bg-gray-50 flex items-center gap-1">
               <ChevronLeft size={18} /> Back
             </button>
-            <button onClick={resetFlow}
-              className="flex-1 py-3 bg-gradient-to-r from-teal-600 to-blue-600 text-white rounded-lg hover:from-teal-700 hover:to-blue-700 flex items-center justify-center gap-2 font-medium">
-              <RefreshCw size={18} /> Start New Extraction
+            <button onClick={storeApproved} disabled={loading || !d2Sections?.total_sections}
+              className="flex-1 py-3 bg-gradient-to-r from-green-600 to-teal-600 text-white rounded-lg hover:from-green-700 hover:to-teal-700 flex items-center justify-center gap-2 font-medium disabled:opacity-50">
+              <Database size={18} /> Store Approved Sections to MongoDB
             </button>
           </div>
+
+          <button onClick={resetFlow}
+            className="w-full py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2 text-gray-600">
+            <RefreshCw size={16} /> Start New Extraction
+          </button>
         </div>
       )}
     </div>
