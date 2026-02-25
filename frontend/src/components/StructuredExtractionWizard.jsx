@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 
 import { API_V5 as API } from '../config';
+import { safeJson } from '../utils/api';
 
 const CATEGORY_ICONS = {
   cashback: '💰', lounge: '✈️', golf: '🏌️', dining: '🍽️',
@@ -105,7 +106,7 @@ export default function StructuredExtractionWizard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!res.ok) throw new Error(data.detail || 'Failed to create session');
       setSessionId(data.session_id);
       setBankName(data.bank_name);
@@ -137,14 +138,14 @@ export default function StructuredExtractionWizard() {
         body: JSON.stringify({ card_ids: Array.from(selectedCardIds) }),
       });
       if (!selRes.ok) {
-        const selData = await selRes.json();
+        const selData = await safeJson(selRes);
         throw new Error(selData.detail || 'Failed to select cards');
       }
 
       // Process depth 1
       setLoadingMsg('Scraping card detail pages & extracting sections...');
       const res = await fetch(`${API}/sessions/${sessionId}/process-depth1`, { method: 'POST' });
-      const data = await res.json();
+      const data = await safeJson(res);
       console.log('[V5] Depth 1 response:', data);
       if (!res.ok) throw new Error(data.detail || 'Depth 1 processing failed');
       setDepth1Results(data);
@@ -155,7 +156,7 @@ export default function StructuredExtractionWizard() {
         if (firstCard.card_id && firstCard.sections > 0) {
           try {
             const secRes = await fetch(`${API}/sessions/${sessionId}/card-sections/${firstCard.card_id}`);
-            const secData = await secRes.json();
+            const secData = await safeJson(secRes);
             setCardSections(prev => ({ ...prev, [firstCard.card_id]: secData }));
             setExpandedCard(firstCard.card_id);
           } catch (e) { console.warn('Failed to auto-load sections:', e); }
@@ -178,7 +179,7 @@ export default function StructuredExtractionWizard() {
     }
     try {
       const res = await fetch(`${API}/sessions/${sessionId}/card-sections/${cardId}`);
-      const data = await res.json();
+      const data = await safeJson(res);
       console.log('[V5] Card sections:', data);
       setCardSections(prev => ({ ...prev, [cardId]: data }));
       setExpandedCard(cardId);
@@ -190,7 +191,7 @@ export default function StructuredExtractionWizard() {
     if (!window.confirm('Delete this section? Its depth-2 URLs will be skipped.')) return;
     try {
       const res = await fetch(`${API}/sessions/${sessionId}/sections/${sectionId}`, { method: 'DELETE' });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!res.ok) throw new Error(data.detail || 'Delete failed');
       // Reload sections
       await loadCardSections(cardId, true);
@@ -201,7 +202,7 @@ export default function StructuredExtractionWizard() {
   const toggleSectionApproval = async (sectionId, cardId) => {
     try {
       const res = await fetch(`${API}/sessions/${sessionId}/sections/${sectionId}/toggle-approval`, { method: 'POST' });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!res.ok) throw new Error(data.detail || 'Toggle failed');
       await loadCardSections(cardId, true);
     } catch (err) { setError(err.message); }
@@ -212,7 +213,7 @@ export default function StructuredExtractionWizard() {
     setLoading(true); setLoadingMsg('Scraping & sectioning benefit pages (depth 2-3)...'); setError('');
     try {
       const res = await fetch(`${API}/sessions/${sessionId}/process-depth2`, { method: 'POST' });
-      const data = await res.json();
+      const data = await safeJson(res);
       console.log('[V5] Depth 2-3 response:', data);
       if (!res.ok) throw new Error(data.detail || 'Depth 2 processing failed');
       setDepth2Results(data);
@@ -231,7 +232,7 @@ export default function StructuredExtractionWizard() {
   const loadDepth2Sections = async () => {
     try {
       const res = await fetch(`${API}/sessions/${sessionId}/depth2-sections`);
-      const data = await res.json();
+      const data = await safeJson(res);
       setD2Sections(data);
     } catch (err) { setError(err.message); }
   };
@@ -255,7 +256,7 @@ export default function StructuredExtractionWizard() {
     setLoading(true); setLoadingMsg('Storing approved sections...'); setError('');
     try {
       const res = await fetch(`${API}/sessions/${sessionId}/store-approved`, { method: 'POST' });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!res.ok) throw new Error(data.detail || 'Store failed');
       setStoreResult(data);
       await loadDepth2Sections();

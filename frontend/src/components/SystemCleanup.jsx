@@ -1,3 +1,4 @@
+import { safeJson } from '../utils/api';
 import React, { useState, useEffect } from 'react';
 import {
   Trash2, RefreshCw, Loader2, AlertTriangle, CheckCircle, Database,
@@ -68,7 +69,7 @@ export default function SystemCleanup() {
     setLoading(true);
     try {
       const res = await fetch(`${API}/system/stats`);
-      const data = await res.json();
+      const data = await safeJson(res);
       setStats(data.stats || {});
     } catch (err) {
       setError('Failed to load stats: ' + err.message);
@@ -97,7 +98,7 @@ export default function SystemCleanup() {
       const params = new URLSearchParams();
       GROUPS.forEach(g => params.append(g.key, selected[g.key]));
       const res = await fetch(`${API}/system/cleanup?${params.toString()}`, { method: 'POST' });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!res.ok) throw new Error(data.detail || 'Cleanup failed');
       setResult(data);
       setConfirmText('');

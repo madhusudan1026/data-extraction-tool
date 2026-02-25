@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # LLM / Ollama
     OLLAMA_BASE_URL: str = "http://localhost:11434"  # Base URL without endpoint path
     OLLAMA_URL: str = "http://localhost:11434/api/generate"  # Legacy, for backward compatibility
-    DEFAULT_MODEL: str = "phi"
+    DEFAULT_MODEL: str = "llama3.2"
     DEFAULT_TEMPERATURE: float = 0.1
     LLM_TIMEOUT: int = 180  # Allow enough time for comprehensive extraction
     LLM_MAX_RETRIES: int = 2

@@ -1,3 +1,4 @@
+import { safeJson } from '../utils/api';
 import React, { useState, useEffect } from 'react';
 import { Loader2, Trash2, Eye, RefreshCw, Database, FileText, Globe, File, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 
@@ -15,12 +16,12 @@ function ExtractionsList() {
     try {
       if (viewMode === 'raw') {
         const res = await fetch(`${API_V2}/raw-extractions?limit=20&skip=${(page - 1) * 20}`);
-        const data = await res.json();
+        const data = await safeJson(res);
         setExtractions(data.extractions || []);
         setTotalPages(Math.ceil((data.total || 0) / 20) || 1);
       } else {
         const res = await fetch(`${API_V2}?page=${page}&limit=10`);
-        const data = await res.json();
+        const data = await safeJson(res);
         if (Array.isArray(data)) {
           setExtractions(data);
           setTotalPages(1);

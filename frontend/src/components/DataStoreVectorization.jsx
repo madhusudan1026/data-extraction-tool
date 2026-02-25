@@ -1,3 +1,4 @@
+import { safeJson } from '../utils/api';
 /**
  * Data Store & Vectorization
  * 
@@ -54,7 +55,7 @@ export default function DataStoreVectorization() {
     setLoading(true);
     try {
       const res = await fetch(`${API_V2}/approved-raw`);
-      const data = await res.json();
+      const data = await safeJson(res);
       setRecords(data.records || []);
     } catch (err) {
       setError('Failed to load stored data: ' + err.message);
@@ -71,7 +72,7 @@ export default function DataStoreVectorization() {
     setLoading(true);
     try {
       const res = await fetch(`${API_V2}/approved-raw/${record.saved_id}`);
-      const data = await res.json();
+      const data = await safeJson(res);
       setRecordDetail(data.record || data);
     } catch (err) {
       setError('Failed to load record details: ' + err.message);
@@ -89,7 +90,7 @@ export default function DataStoreVectorization() {
       if (selectedRecord.vector_indexed && !reindexVectors) {
         const vRes = await fetch(`${API_VECTOR}/record-data/${selectedRecord.saved_id}`);
         if (vRes.ok) {
-          const vData = await vRes.json();
+          const vData = await safeJson(vRes);
           if (vData.success && vData.total_chunks > 0) {
             setVectorData(vData);
             setVectorResult({ vector_chunks: vData.total_chunks, card_name: vData.card_name });
@@ -103,7 +104,7 @@ export default function DataStoreVectorization() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ saved_id: selectedRecord.saved_id })
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!res.ok) throw new Error(data.detail || 'Failed to preview chunks');
       setChunkPreview(data);
       setStep(2);
@@ -118,7 +119,7 @@ export default function DataStoreVectorization() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ saved_id: selectedRecord.saved_id, clear_old: clearOldVectors })
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!res.ok) throw new Error(data.detail || 'Vector indexing failed');
       if (data.success === false) {
         setError(data.error || `Indexing returned 0 chunks. Is Ollama running with nomic-embed-text?`);
@@ -127,7 +128,7 @@ export default function DataStoreVectorization() {
       }
       setVectorResult(data);
       const vRes = await fetch(`${API_VECTOR}/record-data/${selectedRecord.saved_id}`);
-      if (vRes.ok) setVectorData(await vRes.json());
+      if (vRes.ok) setVectorData(await safeJson(vRes));
       loadRecords();
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }

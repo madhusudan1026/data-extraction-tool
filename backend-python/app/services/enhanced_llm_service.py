@@ -32,7 +32,7 @@ class EnhancedLLMService:
             # Extract base URL from legacy setting
             self.ollama_base_url = legacy_endpoint.rsplit('/api/', 1)[0]
         
-        self.model = getattr(settings, 'DEFAULT_MODEL', 'llama3')
+        self.model = getattr(settings, 'DEFAULT_MODEL', 'llama3.2')
         self.temperature = getattr(settings, 'DEFAULT_TEMPERATURE', 0.1)
         self.timeout = getattr(settings, 'LLM_TIMEOUT', 120)
         self.max_retries = getattr(settings, 'LLM_MAX_RETRIES', 3)

@@ -1,3 +1,4 @@
+import { safeJson } from '../utils/api';
 /**
  * Pipeline Execution
  * 
@@ -58,7 +59,7 @@ export default function PipelineExecution() {
     setLoading(true);
     try {
       const res = await fetch(`${API_VECTOR}/banks`);
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!data.success) throw new Error('Failed to load banks');
       setBanks(data.banks || []);
     } catch (err) {
@@ -71,7 +72,7 @@ export default function PipelineExecution() {
   const loadPipelines = async () => {
     try {
       const res = await fetch(`${API_BASE}/pipelines`);
-      const data = await res.json();
+      const data = await safeJson(res);
       setPipelines(data.pipelines || []);
     } catch (err) {
       console.error('Failed to load pipelines:', err);
@@ -91,7 +92,7 @@ export default function PipelineExecution() {
       if (cardUrl) params.append('card_url', cardUrl);
       const url = `${API_VECTOR}/card-chunks/${encodeURIComponent(card.card_name)}?${params.toString()}`;
       const res = await fetch(url);
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!res.ok || !data.success) throw new Error(data.detail || 'Failed to load card chunks');
       
       if (data.total_chunks === 0) {
@@ -99,7 +100,7 @@ export default function PipelineExecution() {
         let debugInfo = '';
         try {
           const debugRes = await fetch(`${API_VECTOR}/debug/all-metadata?limit=100`);
-          const debugData = await debugRes.json();
+          const debugData = await safeJson(debugRes);
           const cardNamesInDB = Object.keys(debugData.unique_card_names || {}).join(', ');
           const bankKeysInDB = Object.keys(debugData.unique_bank_keys || {}).join(', ');
           debugInfo = `\n\nVector DB contains ${debugData.total_chunks} total chunks.\nCard names in DB: ${cardNamesInDB || 'none'}\nBank keys in DB: ${bankKeysInDB || 'none'}`;
@@ -153,7 +154,7 @@ export default function PipelineExecution() {
       // Find the approved_raw_data record(s) that contain data for this card
       // Use the first source's primary_url to find the saved_id
       const approvedRes = await fetch(`${API_V2}/approved-raw`);
-      const approvedData = await approvedRes.json();
+      const approvedData = await safeJson(approvedRes);
       const records = approvedData.records || [];
       
       // Find record matching this card (by card name or bank)
@@ -180,7 +181,7 @@ export default function PipelineExecution() {
         { method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pipeline_names: Array.from(selectedPipelines) }) }
       );
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!res.ok) throw new Error(data.detail || 'Pipeline execution failed');
       setPipelineResults(data.result || data);
       setStep(3);

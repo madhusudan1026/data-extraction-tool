@@ -54,9 +54,10 @@ async def scrape_card_page_interactive(url: str, card_name: str = "") -> Dict[st
 
     try:
         async with async_playwright() as p:
+            logger.info(f"[Interactive] Launching browser for {url[:80]}...")
             browser = await p.chromium.launch(
                 headless=True,
-                args=['--no-sandbox', '--disable-dev-shm-usage'],
+                args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
             )
             page = await browser.new_page()
             await page.set_extra_http_headers({
@@ -64,6 +65,7 @@ async def scrape_card_page_interactive(url: str, card_name: str = "") -> Dict[st
             })
 
             # Navigate — use domcontentloaded first (reliable), then try networkidle briefly
+            logger.info(f"[Interactive] Navigating to {url[:80]}...")
             await page.goto(url, wait_until="domcontentloaded", timeout=45000)
             try:
                 await page.wait_for_load_state("networkidle", timeout=10000)
@@ -258,22 +260,18 @@ async def scrape_card_page_interactive(url: str, card_name: str = "") -> Dict[st
 
 
 async def _smart_scroll(page) -> None:
-    """Scroll the page to trigger lazy loading."""
+    """Scroll the page to trigger lazy loading — optimized for Docker."""
     try:
         last_height = 0
-        for _ in range(15):
+        for i in range(8):
             current_height = await page.evaluate("document.body.scrollHeight")
             if current_height == last_height:
                 break
             last_height = current_height
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await page.wait_for_timeout(1000)
-            try:
-                await page.wait_for_load_state("networkidle", timeout=2000)
-            except:
-                pass
+            await page.wait_for_timeout(800)
         await page.evaluate("window.scrollTo(0, 0)")
-        await page.wait_for_timeout(500)
+        await page.wait_for_timeout(300)
     except Exception as e:
         logger.warning(f"[Interactive] Scroll error: {e}")
 

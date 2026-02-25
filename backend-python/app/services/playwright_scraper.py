@@ -12,48 +12,48 @@ async def scrape_with_playwright(url: str) -> str:
     try:
         from playwright.async_api import async_playwright
 
+        logger.info(f"[Playwright] Launching browser for {url[:80]}...")
+
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+            browser = await p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+            )
             page = await browser.new_page()
 
             await page.set_extra_http_headers({
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             })
 
+            logger.info(f"[Playwright] Navigating to {url[:80]}...")
             await page.goto(url, wait_until="domcontentloaded", timeout=45000)
             try:
-                await page.wait_for_load_state("networkidle", timeout=10000)
+                await page.wait_for_load_state("networkidle", timeout=8000)
             except Exception:
-                pass  # Many bank sites never reach networkidle due to analytics
+                pass
 
-            # Smart scrolling to trigger lazy-loaded content
+            # Quick scroll — max 8 attempts, 800ms each
             last_height = 0
-            scroll_attempts = 0
-            while scroll_attempts < 20:
+            for i in range(8):
                 current_height = await page.evaluate("document.body.scrollHeight")
                 if current_height == last_height:
                     break
                 last_height = current_height
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                await page.wait_for_timeout(1500)
-                try:
-                    await page.wait_for_load_state("networkidle", timeout=3000)
-                except Exception:
-                    pass
-                scroll_attempts += 1
+                await page.wait_for_timeout(800)
 
             await page.evaluate("window.scrollTo(0, 0)")
-            await page.wait_for_timeout(500)
+            await page.wait_for_timeout(300)
 
             html = await page.content()
             await browser.close()
 
-            logger.info(f"Playwright scraped {len(html)} chars from {url}")
+            logger.info(f"[Playwright] Done: {len(html)} chars from {url[:80]}")
             return html
 
     except ImportError:
         logger.warning("Playwright not installed")
         return None
     except Exception as e:
-        logger.error(f"Playwright error for {url}: {e}")
+        logger.error(f"[Playwright] Error for {url[:80]}: {e}")
         return None

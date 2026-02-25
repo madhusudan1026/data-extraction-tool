@@ -1,11 +1,10 @@
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 
-# System dependencies for Playwright, PDF processing, and general build
+# System dependencies for Playwright Chromium + PDF processing
+# libasound2 was renamed to libasound2t64 in newer Debian — install whichever exists
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libglib2.0-0 \
     libnss3 \
     libnspr4 \
     libdbus-1-3 \
@@ -21,30 +20,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgbm1 \
     libpango-1.0-0 \
     libcairo2 \
-    libasound2 \
     libatspi2.0-0 \
     libwayland-client0 \
+    libglib2.0-0 \
     fonts-liberation \
     fonts-noto-color-emoji \
+    fonts-unifont \
     poppler-utils \
     tesseract-ocr \
+    build-essential \
     curl \
+    && (apt-get install -y --no-install-recommends libasound2t64 2>/dev/null \
+        || apt-get install -y --no-install-recommends libasound2 2>/dev/null \
+        || true) \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers
+# Install Playwright Chromium browser binary
 RUN playwright install chromium
 
 # Copy application code
 COPY . .
 
-# Create directories for persistent data
 RUN mkdir -p /app/chroma_data /app/logs
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 

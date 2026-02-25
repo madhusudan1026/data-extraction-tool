@@ -29,7 +29,7 @@ docker compose up -d mongo redis ollama
 # Wait for Ollama to be ready, then pull models
 echo ""
 echo "[4/5] Waiting for Ollama and pulling models..."
-OLLAMA_MODELS=${OLLAMA_MODELS:-"nomic-embed-text,phi"}
+OLLAMA_MODELS=${OLLAMA_MODELS:-"nomic-embed-text,llama3.2"}
 
 echo "  Waiting for Ollama to start..."
 for i in $(seq 1 30); do

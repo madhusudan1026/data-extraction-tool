@@ -102,19 +102,19 @@ class BasePipeline(ABC):
     url_patterns: List[str] = []  # e.g., ['movie', 'cinema', 'film'] for movie pipeline
     
     # LLM configuration - model can be set via environment variable
-    # Recommended models: llama3.2, mistral, phi3 (phi has very limited context)
+    # Recommended models: llama3.2, mistral, phi (phi is lightweight and fast)
     llm_enabled: bool = True
-    llm_model: str = os.getenv("OLLAMA_MODEL", "llama3.2")  # Default to llama3.2 for better quality
+    llm_model: str = os.getenv("DEFAULT_MODEL", os.getenv("OLLAMA_MODEL", "llama3.2"))
     llm_timeout: float = 180.0  # Increased for larger models
-    llm_endpoint: str = "http://localhost:11434/api/generate"
+    llm_endpoint: str = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
     
     # Model-specific settings
     MODEL_CONFIGS = {
-        "phi": {"max_content": 2000, "num_predict": 1000, "num_ctx": 2048},
+        "phi": {"max_content": 4000, "num_predict": 1500, "num_ctx": 4096},
         "phi3": {"max_content": 6000, "num_predict": 2000, "num_ctx": 8192},
-        "llama3.2": {"max_content": 8000, "num_predict": 2000, "num_ctx": 8192},
+        "llama3.2": {"max_content": 8000, "num_predict": 4096, "num_ctx": 8192},
         "llama2": {"max_content": 6000, "num_predict": 2000, "num_ctx": 4096},
-        "mistral": {"max_content": 8000, "num_predict": 2000, "num_ctx": 8192},
+        "mistral": {"max_content": 8000, "num_predict": 4096, "num_ctx": 8192},
         "default": {"max_content": 6000, "num_predict": 2000, "num_ctx": 4096},
     }
     

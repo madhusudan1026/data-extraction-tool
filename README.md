@@ -65,7 +65,7 @@ npm install
 npm run dev
 
 # Ollama models (separate terminal)
-ollama pull phi
+ollama pull llama3.2
 ollama pull nomic-embed-text
 ```
 
@@ -82,7 +82,7 @@ MONGODB_URL=mongodb://localhost:27017
 MONGODB_DATABASE=credit_card_extraction
 REDIS_URL=redis://localhost:6379
 OLLAMA_BASE_URL=http://localhost:11434
-DEFAULT_MODEL=phi
+DEFAULT_MODEL=llama3.2
 CHROMA_PERSIST_DIR=./chroma_data
 EMBED_MODEL=nomic-embed-text
 CORS_ORIGINS=http://localhost:5173,http://localhost:3000

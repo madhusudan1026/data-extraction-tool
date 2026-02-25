@@ -559,7 +559,7 @@ Now list ALL benefits from the text above. Return JSON only:"""
                 self.all_entities = all_entities
                 self.sources_processed = [SourceReference(url=source_url)] if source_url else []
                 self.extraction_metadata = {
-                    "model": self.default_model if hasattr(self, 'default_model') else "phi",
+                    "model": self.default_model if hasattr(self, 'default_model') else "llama3.2",
                     "extracted_at": datetime.utcnow().isoformat()
                 }
                 self.total_items = len(intelligence_items)

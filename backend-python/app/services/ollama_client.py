@@ -34,7 +34,7 @@ class OllamaClient:
 
     def __init__(self):
         self.base_url = getattr(settings, "OLLAMA_BASE_URL", "http://localhost:11434")
-        self.default_model = getattr(settings, "DEFAULT_MODEL", "phi")
+        self.default_model = getattr(settings, "DEFAULT_MODEL", "llama3.2")
         self.default_temperature = getattr(settings, "DEFAULT_TEMPERATURE", 0.1)
         self.default_timeout = getattr(settings, "LLM_TIMEOUT", 180)
         self.default_max_retries = getattr(settings, "LLM_MAX_RETRIES", 2)
@@ -221,13 +221,21 @@ def parse_llm_json(response: str) -> Optional[Dict[str, Any]]:
     text = re.sub(r"```\s*", "", text)
     text = re.sub(r"`", "", text)
 
-    # 2. Remove common LLM preamble
+    # 2. Remove common LLM preamble — strip everything before first { or [
     for prefix in (
         "Here is the JSON:", "Here's the JSON:", "JSON:", "Output:",
         "Result:", "Response:",
     ):
         if text.lower().startswith(prefix.lower()):
             text = text[len(prefix):].strip()
+
+    # 2b. If text starts with prose (no JSON opener), skip to first { or [
+    if text and text[0] not in ('{', '['):
+        first_brace = text.find('{')
+        first_bracket = text.find('[')
+        candidates = [i for i in (first_brace, first_bracket) if i != -1]
+        if candidates:
+            text = text[min(candidates):]
 
     # 3. Try direct parse
     try:
@@ -252,41 +260,93 @@ def parse_llm_json(response: str) -> Optional[Dict[str, Any]]:
                     pass
 
     # 5. Attempt truncated-JSON repair
-    start = text.find('{')
+    start = text.find('[')
     if start == -1:
-        start = text.find('[')
+        start = text.find('{')
     if start != -1:
         fragment = text[start:]
         repaired = _repair_truncated_json(fragment)
         if repaired:
             try:
-                return json.loads(repaired)
-            except json.JSONDecodeError:
-                pass
+                parsed = json.loads(repaired)
+                logger.info(f"JSON repair succeeded — recovered {type(parsed).__name__}")
+                return parsed
+            except json.JSONDecodeError as e:
+                logger.debug(f"JSON repair attempt failed: {e}")
 
-    logger.warning(f"JSON parse failed for response: {response[:300]}...")
+    logger.warning(f"JSON parse failed for response ({len(response)} chars): {response[:300]}...")
     return None
 
 
 def _repair_truncated_json(json_str: str) -> Optional[str]:
-    """Close unclosed brackets/braces so truncated JSON can be parsed."""
+    """
+    Repair truncated JSON by:
+    1. Finding the last complete JSON object/value
+    2. Closing all open brackets/braces in correct LIFO order
+    """
     open_braces = json_str.count('{') - json_str.count('}')
     open_brackets = json_str.count('[') - json_str.count(']')
     if open_braces <= 0 and open_brackets <= 0:
         return None
 
     repaired = json_str.rstrip()
-    # Remove trailing comma
-    if repaired.endswith(','):
-        repaired = repaired[:-1]
-    # Remove incomplete key-value pair at end
-    repaired = re.sub(r',?\s*"[^"]*":\s*$', '', repaired)
-    repaired = re.sub(r',?\s*"[^"]*":\s*"[^"]*$', '', repaired)
-    repaired = repaired.rstrip().rstrip(',')
 
-    repaired += ']' * max(0, open_brackets)
-    repaired += '}' * max(0, open_braces)
-    logger.debug(f"JSON repair: closed {open_brackets} brackets, {open_braces} braces")
+    # Find the last cleanly-closed '}' that isn't inside a string
+    in_string = False
+    escape_next = False
+    last_complete_obj_end = -1
+    for i, ch in enumerate(repaired):
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == '\\' and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == '}':
+            last_complete_obj_end = i
+
+    if last_complete_obj_end > 0:
+        # Cut after the last complete object, remove trailing comma
+        repaired = repaired[:last_complete_obj_end + 1].rstrip().rstrip(',')
+    else:
+        # No complete object found — strip incomplete content with regex
+        repaired = re.sub(r',?\s*"[^"]*":\s*"[^"]*$', '', repaired)
+        repaired = re.sub(r',?\s*"[^"]*$', '', repaired)
+        repaired = re.sub(r',?\s*"[^"]*":\s*$', '', repaired)
+        repaired = repaired.rstrip().rstrip(',')
+
+    # Close remaining open brackets in correct LIFO order
+    stack = []
+    in_string = False
+    escape_next = False
+    for ch in repaired:
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == '\\' and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch in ('{', '['):
+            stack.append(ch)
+        elif ch == '}' and stack and stack[-1] == '{':
+            stack.pop()
+        elif ch == ']' and stack and stack[-1] == '[':
+            stack.pop()
+
+    for opener in reversed(stack):
+        repaired += '}' if opener == '{' else ']'
+
+    logger.debug(f"JSON repair: closed {len(stack)} unclosed brackets/braces")
     return repaired
 
 
